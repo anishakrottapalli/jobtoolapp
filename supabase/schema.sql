@@ -1,5 +1,5 @@
 -- Job Networking App: database schema.
--- Run once in the Supabase SQL editor. Safe to re-run.
+-- Run once in the Supabase SQL editor on a fresh project.
 
 create table if not exists public.contacts (
   id                    uuid primary key default gen_random_uuid(),
@@ -43,27 +43,24 @@ create index if not exists contacts_user_idx on public.contacts (user_id);
 create index if not exists interactions_contact_idx on public.interactions (contact_id);
 
 create or replace function public.touch_updated_at() returns trigger
-language plpgsql as $$
+language plpgsql set search_path = '' as $$
 begin
   new.updated_at = now();
   return new;
 end $$;
 
-drop trigger if exists contacts_touch on public.contacts;
-create trigger contacts_touch before update on public.contacts
+create or replace trigger contacts_touch before update on public.contacts
   for each row execute function public.touch_updated_at();
 
 -- Row level security: each signed-in user sees and edits only their own rows.
 alter table public.contacts enable row level security;
 alter table public.interactions enable row level security;
 
-drop policy if exists "own contacts" on public.contacts;
 create policy "own contacts" on public.contacts
   for all to authenticated
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
 
-drop policy if exists "own interactions" on public.interactions;
 create policy "own interactions" on public.interactions
   for all to authenticated
   using (user_id = auth.uid())
