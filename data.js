@@ -5,7 +5,7 @@
 (function () {
   const CONTACT_FIELDS = [
     "first_name", "middle_name", "last_name", "job_title", "company", "location",
-    "linkedin_url", "personal_email", "personal_email_status", "work_email",
+    "linkedin_url", "linkedin_status", "personal_email", "personal_email_status", "work_email",
     "work_email_status", "preferred_email", "phone", "referred_by", "event_met_at",
     "notes", "tags",
   ];
@@ -104,14 +104,14 @@
 
     function sampleData() {
       const a = uid(), b = uid(), c = uid();
-      const blank = { middle_name: "", location: "", linkedin_url: "", phone: "", referred_by: "",
+      const blank = { middle_name: "", location: "", linkedin_url: "", linkedin_status: "none", phone: "", referred_by: "",
         event_met_at: "", notes: "", work_email: "", personal_email: "",
         personal_email_status: "unchecked", work_email_status: "unchecked", preferred_email: null, tags: [] };
       return {
         contacts: [
           { ...blank, id: a, first_name: "Priya", last_name: "Shah", job_title: "Engineering Manager",
             company: "Acme Corp", location: "Seattle, WA", work_email: "priya@acme.example",
-            work_email_status: "verified", preferred_email: "work", referred_by: "Jordan Lee",
+            work_email_status: "verified", preferred_email: "work", referred_by: "Jordan Lee", linkedin_status: "connected",
             event_met_at: "Women in Tech Mixer", notes: "Hiring for Q4 platform team.",
             tags: ["alumni", "hiring"], created_at: now() },
           { ...blank, id: b, first_name: "Marcus", middle_name: "T", last_name: "Nguyen",
@@ -121,6 +121,7 @@
             linkedin_url: "https://www.linkedin.com/in/example", tags: ["fintech"], created_at: now() },
         ],
         interactions: [
+          { id: uid(), contact_id: a, kind: "linkedin", method: "Connected", happened_on: "2026-09-08", note: "", created_at: now() },
           { id: uid(), contact_id: a, kind: "outreach", method: "LinkedIn", happened_on: "2026-09-10", note: "Intro message", created_at: now() },
           { id: uid(), contact_id: a, kind: "reply", method: "Email", happened_on: "2026-09-12", note: "Happy to chat next week", created_at: now() },
           { id: uid(), contact_id: b, kind: "outreach", method: "Email", happened_on: "2026-09-15", note: "", created_at: now() },

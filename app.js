@@ -4,6 +4,10 @@
 (function () {
   const METHODS = ["Email", "LinkedIn", "Phone call", "Text", "In person", "Other"];
   const EMAIL_STATUSES = [["unchecked", "Not checked"], ["verified", "Verified"], ["bounced", "Bounced"]];
+  const LI_STATUSES = [["none", "Not connected"], ["following", "Following"], ["requested", "Request sent"], ["connected", "Connected"]];
+  // History entry (kind "linkedin") logged when the status changes; stored in the method column.
+  const LI_EVENT = { following: "Followed", requested: "Request sent", connected: "Connected" };
+  const LI_EVENT_TEXT = { Followed: "Followed on LinkedIn", "Request sent": "Sent a LinkedIn connection request", Connected: "Connected on LinkedIn" };
   const STATUS_FILTERS = [["all", "All"], ["notcontacted", "Not contacted"], ["contacted", "Contacted"], ["waiting", "Waiting"], ["replied", "Replied"]];
 
   const root = document.getElementById("root");
@@ -213,11 +217,13 @@
   }
 
   const statusLabel = (s) => (EMAIL_STATUSES.find(([v]) => v === s) || [, ""])[1];
+  const liLabel = (s) => (LI_STATUSES.find(([v]) => v === s) || LI_STATUSES[0])[1];
+  const kindLabel = { outreach: "Outreach", reply: "Reply", linkedin: "LinkedIn" };
   const everyone = () => state.contacts.map((c) => ({ c, s: summary(c) }));
 
   function exportContacts(list) {
     const header = [
-      "First Name", "Middle Name", "Last Name", "Job Title", "Company", "Location", "LinkedIn",
+      "First Name", "Middle Name", "Last Name", "Job Title", "Company", "Location", "LinkedIn", "LinkedIn Status",
       "Personal Email", "Personal Email Status", "Work Email", "Work Email Status", "Preferred Email",
       "Phone", "Contacted", "Times Contacted", "Last Contacted On", "Last Contacted Via",
       "Replied", "Times Replied", "Last Replied On", "Last Replied Via",
@@ -225,7 +231,7 @@
     ];
     const rows = list.map(({ c, s }) => [
       c.first_name, c.middle_name, c.last_name, c.job_title, c.company, c.location, c.linkedin_url,
-      c.personal_email, c.personal_email ? statusLabel(c.personal_email_status) : "",
+      liLabel(c.linkedin_status), c.personal_email, c.personal_email ? statusLabel(c.personal_email_status) : "",
       c.work_email, c.work_email ? statusLabel(c.work_email_status) : "", preferredEmail(c),
       c.phone, s.lastOut ? "Yes" : "No", s.outreach.length, s.lastOut ? s.lastOut.happened_on : "",
       s.lastOut ? s.lastOut.method : "", s.lastReply ? "Yes" : "No", s.replies.length,
@@ -241,7 +247,7 @@
     const rows = [];
     list.forEach(({ c, s }) => {
       [...s.history].reverse().forEach((i) => rows.push([
-        fullName(c), c.company, i.kind === "outreach" ? "Outreach" : "Reply", i.happened_on, i.method, i.note,
+        fullName(c), c.company, kindLabel[i.kind] || i.kind, i.happened_on, i.method, i.note,
       ]));
     });
     downloadCsv(`contact-history-${todayISO()}.csv`, header, rows);
@@ -280,6 +286,8 @@
     company: ["company", "companyname", "organization", "organisation", "employer"],
     location: ["location", "city"],
     linkedin_url: ["linkedin", "linkedinurl", "linkedinprofile", "url", "profileurl"],
+    linkedin_status: ["linkedinstatus", "connectionstatus"],
+    connected_on: ["connectedon"],
     personal_email: ["personalemail", "email", "emailaddress", "email1"],
     personal_email_status: ["personalemailstatus"],
     work_email: ["workemail", "businessemail", "email2"],
@@ -298,6 +306,7 @@
   const COLUMN_LABELS = {
     first_name: "First name", middle_name: "Middle name", last_name: "Last name", full_name: "Full name",
     job_title: "Job title", company: "Company", location: "Location", linkedin_url: "LinkedIn",
+    linkedin_status: "LinkedIn status", connected_on: "Connected on (LinkedIn)",
     personal_email: "Personal email", personal_email_status: "Personal email status", work_email: "Work email",
     work_email_status: "Work email status", preferred_email: "Preferred email", phone: "Phone",
     referred_by: "Referred by", event_met_at: "Event met at", notes: "Notes", tags: "Tags",
@@ -319,6 +328,8 @@
   const toMethod = (v) => METHODS.find((m) => m.toLowerCase() === String(v || "").trim().toLowerCase()) ||
     (/phone|call/i.test(v) ? "Phone call" : /sms|text/i.test(v) ? "Text" : /person|coffee|meet/i.test(v) ? "In person" : "Other");
   const toStatus = (v) => (/verif/i.test(v) ? "verified" : /bounc/i.test(v) ? "bounced" : "unchecked");
+  const toLiStatus = (v) => (!v || /not|none/i.test(v) ? "none" : /request|pending|sent/i.test(v) ? "requested"
+    : /connect/i.test(v) ? "connected" : /follow/i.test(v) ? "following" : "none");
 
   function planImport(text) {
     const rows = parseCsv(text);
@@ -354,6 +365,7 @@
         first_name: rec.first_name, middle_name: rec.middle_name || "", last_name: rec.last_name || "",
         job_title: rec.job_title || "", company: rec.company || "", location: rec.location || "",
         linkedin_url: rec.linkedin_url ? safeUrl(rec.linkedin_url) || rec.linkedin_url : "",
+        linkedin_status: rec.connected_on ? "connected" : toLiStatus(rec.linkedin_status),
         personal_email: rec.personal_email || "", personal_email_status: toStatus(rec.personal_email_status),
         work_email: rec.work_email || "", work_email_status: toStatus(rec.work_email_status),
         preferred_email: null, phone: rec.phone || "", referred_by: rec.referred_by || "",
@@ -372,6 +384,8 @@
       seenNames.add(nameKey);
 
       const interactions = [];
+      const connectedOn = toISODate(rec.connected_on);
+      if (connectedOn) interactions.push({ kind: "linkedin", happened_on: connectedOn, method: "Connected", note: "Imported" });
       const outOn = toISODate(rec.last_contacted_on);
       if (outOn) interactions.push({ kind: "outreach", happened_on: outOn, method: toMethod(rec.last_contacted_via), note: "Imported" });
       const repOn = toISODate(rec.last_replied_on);
@@ -399,6 +413,11 @@
       return `<span class="badge solid" title="${esc(fmtDate(s.lastReply.happened_on))}">${I.check()} Yes · ${esc(s.lastReply.method)}</span>`;
     }
     return `<span class="badge">No</span>`;
+  }
+  function liMark(c) {
+    const s = c.linkedin_status;
+    if (!s || s === "none") return "";
+    return `<span class="li-mark ${s}" title="LinkedIn: ${esc(liLabel(s))}"><span class="sr-only">LinkedIn: ${esc(liLabel(s))}</span>in</span>`;
   }
   const pills = (tags) => (tags || []).map((t) => `<span class="pill">${esc(t)}</span>`).join("");
 
@@ -510,6 +529,63 @@
     };
   }
 
+  // What you did today, counted from history entries dated today and contacts added today.
+  function todayActivity() {
+    const t = todayISO();
+    const today = state.interactions.filter((i) => i.happened_on === t);
+    const out = today.filter((i) => i.kind === "outreach");
+    const li = today.filter((i) => i.kind === "linkedin");
+    return {
+      emails: out.filter((i) => i.method === "Email").length,
+      liMessages: out.filter((i) => i.method === "LinkedIn").length,
+      otherOut: out.filter((i) => i.method !== "Email" && i.method !== "LinkedIn").length,
+      replies: today.filter((i) => i.kind === "reply").length,
+      liRequests: li.filter((i) => i.method === "Request sent" || i.method === "Followed").length,
+      liConnected: li.filter((i) => i.method === "Connected").length,
+      added: state.contacts.filter((c) => c.created_at && isoOf(new Date(c.created_at)) === t).length,
+    };
+  }
+
+  const CHEERS = [
+    // [minimum actions, messages]
+    [10, ["Outstanding hustle today. Take a second to be proud of that.", "Double digits! That's the kind of day that lands interviews.", "You showed up in a big way today. Well done."]],
+    [6, ["Great work today — that's real momentum.", "You're on a roll. Keep this energy going.", "Strong day. Every one of these is a door you opened."]],
+    [3, ["Solid day — you're putting yourself out there.", "Nice work. Consistency like this adds up fast.", "Good progress today. Your network is growing."]],
+    [1, ["Good start! Every message is a door opening.", "You got moving today — that's the hardest part.", "One step at a time. Nice work getting started."]],
+    [0, ["A fresh day. One message is all it takes to get going.", "Nothing logged yet today. Who's one person you could reach out to?", "Today's a blank page. A quick note to one contact counts."]],
+  ];
+
+  function cheer(a) {
+    const actions = a.emails + a.liMessages + a.otherOut + a.liRequests + a.added;
+    const [, lines] = CHEERS.find(([min]) => actions >= min);
+    const dayNum = Math.floor(parseISO(todayISO()).getTime() / 86400000);
+    let msg = lines[dayNum % lines.length];
+    const heard = a.replies + a.liConnected;
+    if (heard && !actions) msg = heard === 1 ? "Someone got back to you today — go keep that conversation going." : `${heard} people got back to you today. That's what all the outreach is for.`;
+    else if (heard) msg += heard === 1 ? " Plus, someone got back to you!" : ` Plus, ${heard} people got back to you!`;
+    return msg;
+  }
+
+  function todayCard() {
+    const a = todayActivity();
+    const tile = (n, label) => `<div class="today-tile${n ? "" : " zero"}"><span class="n">${n}</span><span class="l">${label}</span></div>`;
+    return `
+      <section class="card today" aria-label="Today's activity">
+        <div class="today-msg">
+          <span class="label">Today</span>
+          <p>${esc(cheer(a))}</p>
+        </div>
+        <div class="today-tiles">
+          ${tile(a.emails, a.emails === 1 ? "Email sent" : "Emails sent")}
+          ${tile(a.liMessages, a.liMessages === 1 ? "LinkedIn message" : "LinkedIn messages")}
+          ${tile(a.otherOut, "Calls, texts &amp; in person")}
+          ${tile(a.liRequests, "LinkedIn requests &amp; follows")}
+          ${tile(a.replies + a.liConnected, a.replies + a.liConnected === 1 ? "Reply or new connection" : "Replies &amp; new connections")}
+          ${tile(a.added, a.added === 1 ? "New contact" : "New contacts")}
+        </div>
+      </section>`;
+  }
+
   function renderContactsPage(page) {
     const st = stats();
     const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
@@ -523,6 +599,7 @@
           <a class="btn" href="#/import">${I.upload(15)} Import</a>
         </div>
       </div>
+      ${todayCard()}
       <div class="stats">
         <div class="card stat"><span class="label">Total Contacts</span><span class="value">${st.total}</span>
           <span class="sub">${st.addedThisWeek ? `+${st.addedThisWeek} added this week` : "None added this week"}</span></div>
@@ -582,7 +659,7 @@
         <div class="grid-row item${c.id === activeId ? " active" : ""}" data-id="${esc(c.id)}">
           <div class="who-cell">
             <span class="avatar">${esc(initials(c))}</span>
-            <div class="names"><b>${esc(fullName(c))}</b><span>${esc(c.job_title)}${c.company ? `<span class="m-co">${c.job_title ? " · " : ""}${esc(c.company)}</span>` : ""}</span></div>
+            <div class="names"><b>${esc(fullName(c))}${liMark(c)}</b><span>${esc(c.job_title)}${c.company ? `<span class="m-co">${c.job_title ? " · " : ""}${esc(c.company)}</span>` : ""}</span></div>
           </div>
           <div class="cell col-company">${esc(c.company)}</div>
           <div class="col-out">${outBadge(s)}</div>
@@ -788,7 +865,14 @@
           ${kv("Phone", c.phone ? `<a href="tel:${esc(c.phone)}" class="mono">${esc(c.phone)}</a>` : "")}
           ${kv("Referred by", esc(c.referred_by))}
           ${kv("Event met at", esc(c.event_met_at))}
-          ${kv("LinkedIn", li ? `<a href="${esc(li)}" target="_blank" rel="noopener">View profile ↗</a>` : "")}
+          ${kv("Location", esc(c.location))}
+        </section>
+
+        <section class="section"><h3>LinkedIn</h3>
+          <div class="seg" role="group" aria-label="LinkedIn status">
+            ${LI_STATUSES.map(([v, l]) => `<button type="button" data-li="${v}" aria-pressed="${(c.linkedin_status || "none") === v}">${l}</button>`).join("")}
+          </div>
+          <span class="muted" style="font-size:12px">${li ? `<a href="${esc(li)}" target="_blank" rel="noopener">View LinkedIn profile ↗</a> · ` : ""}Changing this adds a dated entry to their history.</span>
         </section>
 
         <section class="section"><h3>Notes</h3>
@@ -810,8 +894,9 @@
           </form>` : ""}
           ${s.history.length ? `<div class="timeline">${s.history.map((i) => `
             <div class="tl-item">
-              <span class="tl-dot${i.kind === "reply" ? " reply" : ""}"></span>
-              <div class="what"><b>${i.kind === "outreach" ? "You reached out" : "They replied"} · ${esc(i.method)}</b>
+              <span class="tl-dot ${i.kind}"></span>
+              <div class="what"><b>${i.kind === "linkedin" ? esc(LI_EVENT_TEXT[i.method] || "LinkedIn · " + i.method)
+                : `${i.kind === "outreach" ? "You reached out" : "They replied"} · ${esc(i.method)}`}</b>
                 <span>${esc(fmtDate(i.happened_on))}${i.note ? " · " + esc(i.note) : ""}</span></div>
               <button class="icon-btn" data-del="${esc(i.id)}" aria-label="Remove this entry" title="Remove this entry">${I.trash()}</button>
             </div>`).join("")}</div>` : state.logOpen ? "" : `<span class="muted">Nothing logged yet.</span>`}
@@ -847,6 +932,22 @@
         renderPage();
       });
     }
+    $$("[data-li]", el).forEach((btn) => btn.addEventListener("click", async () => {
+      const next = btn.dataset.li;
+      if ((c.linkedin_status || "none") === next) return;
+      const group = btn.parentElement;
+      const saved = await run(() => backend.saveContact({ ...c, linkedin_status: next }), group);
+      Object.assign(c, saved);
+      if (LI_EVENT[next]) {
+        const entry = await run(() => backend.addInteraction({
+          contact_id: c.id, kind: "linkedin", method: LI_EVENT[next], happened_on: todayISO(), note: "",
+        }), group);
+        state.interactions.push(entry);
+      }
+      state.flash = `LinkedIn: ${liLabel(next)}.`;
+      renderContactView(el, c);
+      renderPage();
+    }));
     $$("[data-del]", el).forEach((btn) => btn.addEventListener("click", async () => {
       if (!confirm("Remove this history entry?")) return;
       await run(() => backend.deleteInteraction(btn.dataset.del), el);
@@ -887,6 +988,9 @@
             ${text("job_title", "Job title")}${text("company", "Company")}
             ${text("location", "Location / city")}${text("linkedin_url", "LinkedIn profile", "url", ' placeholder="linkedin.com/in/…"')}
           </div>
+          <div class="field"><label for="f-linkedin_status">LinkedIn status</label>
+            <select id="f-linkedin_status" name="linkedin_status">${options(LI_STATUSES, c.linkedin_status || "none")}</select></div>
+          <span class="muted" style="font-size:12px">Setting it here just records where things stand. To log a change with today's date, use the LinkedIn buttons on the contact's page.</span>
         </section>
         <section class="section"><h3>Email</h3>
           ${email("work", "Work email")}

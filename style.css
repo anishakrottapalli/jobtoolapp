@@ -144,6 +144,32 @@ svg { flex-shrink: 0; }
 .meter { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .meter div { height: 100%; background: var(--accent); border-radius: 3px; }
 
+/* ---------- today card ---------- */
+.today { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 20px; padding: 20px; align-items: center; }
+.today-msg { display: flex; flex-direction: column; gap: 8px; }
+.today-msg .label { font-size: 13px; color: var(--muted); }
+.today-msg p { margin: 0; font-size: 19px; font-weight: 600; line-height: 1.35; letter-spacing: -0.01em; }
+.today-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.today-tile { background: var(--card-2); border: 1px solid #242B35; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.today-tile .n { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; color: var(--accent-text); }
+.today-tile .l { font-size: 12px; color: var(--muted); }
+.today-tile.zero .n { color: var(--muted); }
+
+/* ---------- LinkedIn ---------- */
+.li-mark {
+  display: inline-flex; align-items: center; justify-content: center; margin-left: 8px; vertical-align: 1px;
+  width: 16px; height: 16px; border-radius: 4px; font-size: 10px; font-weight: 700; line-height: 1;
+  border: 1px solid var(--line-2); color: var(--muted);
+}
+.li-mark.connected { background: var(--accent); border-color: var(--accent); color: #fff; }
+.li-mark.requested, .li-mark.following { border-color: var(--accent-line); color: var(--accent-text); }
+.seg { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; }
+.seg button { height: 36px; border: none; border-left: 1px solid var(--line-2); background: none; color: var(--fg-3); font-size: 13px; padding: 0 6px; }
+.seg button:first-child { border-left: none; }
+.seg button:hover { background: var(--hover); color: var(--fg); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.tl-dot.linkedin { border-radius: 2px; background: none; border: 2px solid var(--accent-text); }
+
 /* ---------- contacts table ---------- */
 .table-card { overflow: visible; }
 .table-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -318,6 +344,12 @@ svg { flex-shrink: 0; }
   .demo-banner { padding: 8px 16px; }
   .page { padding: 20px 16px 32px; gap: 18px; }
   .page-head h1 { font-size: 22px; }
+  .today { grid-template-columns: 1fr; padding: 16px; gap: 14px; }
+  .today-msg p { font-size: 17px; }
+  .today-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .seg { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .seg button:nth-child(3) { border-left: none; }
+  .seg button:nth-child(n+3) { border-top: 1px solid var(--line-2); }
   .stat { padding: 14px 16px; }
   .stat .value { font-size: 24px; }
   .table-card { background: none; border: none; }

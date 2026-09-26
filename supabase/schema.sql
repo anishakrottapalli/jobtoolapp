@@ -11,6 +11,8 @@ create table if not exists public.contacts (
   company               text,
   location              text,
   linkedin_url          text,
+  linkedin_status       text not null default 'none'
+                        check (linkedin_status in ('none', 'following', 'requested', 'connected')),
   personal_email        text,
   personal_email_status text not null default 'unchecked'
                         check (personal_email_status in ('unchecked', 'verified', 'bounced')),
@@ -32,7 +34,7 @@ create table if not exists public.interactions (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null default auth.uid() references auth.users (id) on delete cascade,
   contact_id  uuid not null references public.contacts (id) on delete cascade,
-  kind        text not null check (kind in ('outreach', 'reply')),
+  kind        text not null check (kind in ('outreach', 'reply', 'linkedin')),
   method      text not null,
   happened_on date not null default current_date,
   note        text,
