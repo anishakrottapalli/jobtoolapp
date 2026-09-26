@@ -35,12 +35,38 @@
       async signOut() {
         await sb.auth.signOut();
       },
+      async setDisplayName(name) {
+        check(await sb.auth.updateUser({ data: { display_name: name } }));
+      },
       async loadAll() {
+        // Supabase returns at most 1000 rows per request, so page through.
+        const fetchAll = async (table, order) => {
+          const out = [];
+          for (let from = 0; ; from += 1000) {
+            const page = check(await sb.from(table).select("*").order(order).order("id").range(from, from + 999));
+            out.push(...page);
+            if (page.length < 1000) return out;
+          }
+        };
         const [contacts, interactions] = await Promise.all([
-          sb.from("contacts").select("*").order("created_at").then(check),
-          sb.from("interactions").select("*").order("happened_on").then(check),
+          fetchAll("contacts", "created_at"),
+          fetchAll("interactions", "happened_on"),
         ]);
         return { contacts, interactions };
+      },
+      async importContacts(items) {
+        // items: [{ contact, interactions: [...] }]
+        const created = [];
+        const createdInteractions = [];
+        for (let i = 0; i < items.length; i += 200) {
+          const chunk = items.slice(i, i + 200);
+          const rows = check(await sb.from("contacts").insert(chunk.map((it) => pick(it.contact, CONTACT_FIELDS))).select());
+          created.push(...rows);
+          const ints = [];
+          rows.forEach((row, j) => chunk[j].interactions.forEach((x) => ints.push({ ...pick(x, INTERACTION_FIELDS), contact_id: row.id })));
+          if (ints.length) createdInteractions.push(...check(await sb.from("interactions").insert(ints).select()));
+        }
+        return { contacts: created, interactions: createdInteractions };
       },
       async saveContact(c) {
         const row = pick(c, CONTACT_FIELDS);
@@ -104,10 +130,28 @@
 
     return {
       demo: true,
-      async currentUser() { return { email: "demo" }; },
+      async currentUser() {
+        return { email: "demo@example.com", user_metadata: { display_name: state.displayName || "Demo" } };
+      },
       async signIn() {},
       async signOut() {},
-      async loadAll() { return JSON.parse(JSON.stringify(state)); },
+      async setDisplayName(name) { state.displayName = name; persist(); },
+      async loadAll() { return JSON.parse(JSON.stringify({ contacts: state.contacts, interactions: state.interactions })); },
+      async importContacts(items) {
+        const out = { contacts: [], interactions: [] };
+        for (const it of items) {
+          const c = { ...pick(it.contact, CONTACT_FIELDS), id: uid(), created_at: now(), updated_at: now() };
+          state.contacts.push(c);
+          out.contacts.push({ ...c });
+          for (const x of it.interactions) {
+            const i = { ...pick(x, INTERACTION_FIELDS), contact_id: c.id, id: uid(), created_at: now() };
+            state.interactions.push(i);
+            out.interactions.push({ ...i });
+          }
+        }
+        persist();
+        return out;
+      },
       async saveContact(c) {
         const row = pick(c, CONTACT_FIELDS);
         if (c.id) {
