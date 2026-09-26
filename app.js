@@ -752,6 +752,7 @@
         <div class="field"><span class="label">Signed in as</span><span>${esc(state.user.email)}</span></div>
         <div class="actions"><button class="btn primary" type="submit">Save</button></div>
       </form>
+      <div class="card settings-card" id="sync-card" style="max-width:760px"><span class="muted">Loading Gmail sync…</span></div>
       <div class="card settings-card">
         <div class="field"><span class="label">Sign out of this device</span></div>
         <div class="actions"><button class="btn" id="sign-out">${I.signout()} Sign out</button></div>
@@ -770,6 +771,108 @@
       location.hash = "#/";
       location.reload();
     });
+    renderSyncCard();
+  }
+
+  // ---------- Gmail sync ----------
+
+  function timeAgo(iso) {
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins} min ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+    return fmtDate(isoOf(new Date(iso)));
+  }
+
+  async function sha256Hex(text) {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  function newToken() {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  async function renderSyncCard(setup) {
+    const box = $("#sync-card");
+    if (!box) return;
+    const intro = `<h2 style="margin:0;font-size:16px;font-weight:600">Gmail sync</h2>
+      <p class="muted" style="margin:0">Every hour, emails you send to people in your contacts are logged as "You reached out · Email", and their emails to you as "They replied · Email". Only who and when is read — never the email itself — using read-only access.</p>`;
+    if (backend.demo) {
+      box.innerHTML = intro + `<p class="muted" style="margin:0">Not available in demo mode.</p>`;
+      return;
+    }
+    if (setup) {
+      renderSyncSetup(box, intro, setup);
+      return;
+    }
+    let status;
+    try {
+      status = await backend.getSyncStatus();
+    } catch (err) {
+      box.innerHTML = intro + `<p class="error" style="margin:0">Couldn't check Gmail sync: ${esc(err.message)}</p>`;
+      return;
+    }
+    const line = !status ? `<span class="badge">Not connected</span>`
+      : status.last_sync_at ? `<span class="badge yes">${I.check()} Connected</span> <span class="muted">Last checked ${esc(timeAgo(status.last_sync_at))}</span>`
+      : `<span class="badge warn">Waiting for first check</span> <span class="muted">Finish the steps in Google, then refresh this page.</span>`;
+    box.innerHTML = `${intro}<div>${line}</div>
+      <div class="actions">
+        <button class="btn${status ? "" : " primary"}" id="sync-setup">${status ? "Set up again" : "Set up Gmail sync"}</button>
+        ${status ? `<button class="btn danger" id="sync-disconnect">Disconnect</button>` : ""}
+      </div>`;
+    $("#sync-setup").addEventListener("click", async () => {
+      if (status && !confirm("This replaces your current connection code. You'll need to paste the new script into Google again. Continue?")) return;
+      const token = newToken();
+      await run(async () => backend.registerSyncToken(await sha256Hex(token)), box);
+      renderSyncCard({ token, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+    });
+    const dis = $("#sync-disconnect");
+    if (dis) dis.addEventListener("click", async () => {
+      if (!confirm("Stop logging Gmail activity? Entries already logged stay in your contacts' history.")) return;
+      await run(() => backend.disconnectSync(), box);
+      renderSyncCard();
+    });
+  }
+
+  function renderSyncSetup(box, intro, setup) {
+    const cfg = window.APP_CONFIG;
+    const zones = [...new Set([setup.timeZone, "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles"])];
+    const script = window.gmailSync.code({ supabaseUrl: cfg.supabaseUrl, supabaseKey: cfg.supabaseKey, token: setup.token });
+    const manifest = window.gmailSync.manifest(setup.timeZone);
+    const step = (n, body) => `<li style="margin-bottom:14px"><b>Step ${n}.</b> ${body}</li>`;
+    box.innerHTML = `${intro}
+      <ol style="margin:0;padding-left:18px;line-height:1.5">
+        ${step(1, `<a href="https://script.google.com/create" target="_blank" rel="noopener">Open a new Google Apps Script project ↗</a> (signed in as the Gmail account you network from).`)}
+        ${step(2, `Select everything in the editor, delete it, and paste this:
+          <textarea class="input mono" readonly rows="5" id="sync-code" style="height:auto;margin-top:6px;font-size:12px">${esc(script)}</textarea>
+          <button class="btn" data-copy="sync-code" style="margin-top:6px">Copy script</button>`)}
+        ${step(3, `Click the gear icon (<b>Project Settings</b>) on the left and tick <b>Show "appsscript.json" manifest file in editor</b>. Go back to the editor (the <b>&lt; &gt;</b> icon), open <b>appsscript.json</b>, replace everything in it with this:
+          <textarea class="input mono" readonly rows="5" id="sync-manifest" style="height:auto;margin-top:6px;font-size:12px">${esc(manifest)}</textarea>
+          <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+            <button class="btn" data-copy="sync-manifest">Copy settings</button>
+            <label class="muted" style="font-size:12px">Dates use timezone
+              <select class="select" id="sync-tz">${options(zones, setup.timeZone)}</select></label>
+          </span>`)}
+        ${step(4, `Click the <b>Save</b> icon. In the dropdown next to <b>Debug</b> at the top, choose <b>setup</b>, then click <b>Run</b>.`)}
+        ${step(5, `Google asks for permission: <b>Review permissions</b> → pick your account → on "Google hasn't verified this app" click <b>Advanced</b> → <b>Go to Untitled project (unsafe)</b> → <b>Allow</b>. That warning shows for every personal script; this one is only yours.`)}
+        ${step(6, `The log at the bottom should say <b>All set!</b> Come back here and refresh — it will show <b>Connected</b>.`)}
+      </ol>
+      <p class="muted" style="margin:0;font-size:12px">The script contains a private connection code for your contacts. Don't share it. If it's ever exposed, use "Set up again" to replace it.</p>
+      <div class="actions"><button class="btn" id="sync-done">Done</button></div>`;
+    $$("[data-copy]", box).forEach((b) => b.addEventListener("click", async () => {
+      const ta = $("#" + b.dataset.copy, box);
+      try { await navigator.clipboard.writeText(ta.value); } catch (e) { ta.select(); document.execCommand("copy"); }
+      const label = b.textContent;
+      b.textContent = "Copied ✓";
+      setTimeout(() => (b.textContent = label), 1500);
+    }));
+    $("#sync-tz", box).addEventListener("change", (e) => {
+      $("#sync-manifest", box).value = window.gmailSync.manifest(e.target.value);
+    });
+    $("#sync-done", box).addEventListener("click", () => renderSyncCard());
   }
 
   // ---------- side panel ----------
@@ -1232,6 +1335,7 @@
       return;
     }
     state.loaded = true;
+    state.loadedAt = Date.now();
     state.route = parseRoute();
     renderShell();
     renderPage();
@@ -1239,6 +1343,16 @@
   }
 
   window.addEventListener("hashchange", () => { if (state.loaded) route(); });
+  // Pick up entries logged elsewhere (Gmail sync, another device) when returning to the tab.
+  document.addEventListener("visibilitychange", async () => {
+    if (document.hidden || !state.loaded || state.route.panel || state.route.page === "settings"
+      || Date.now() - state.loadedAt < 5 * 60000) return;
+    try {
+      Object.assign(state, await backend.loadAll());
+      state.loadedAt = Date.now();
+      if (!state.route.panel && !$(".row-menu")) renderPage();
+    } catch (e) { /* keep showing what we have */ }
+  });
   document.addEventListener("click", (e) => { if (!e.target.closest(".row-menu")) closeRowMenu(); });
   window.addEventListener("resize", closeRowMenu);
   document.addEventListener("scroll", closeRowMenu, true);

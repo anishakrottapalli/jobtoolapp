@@ -38,6 +38,18 @@
       async setDisplayName(name) {
         check(await sb.auth.updateUser({ data: { display_name: name } }));
       },
+      // Gmail sync (see supabase/migrations/003_gmail_sync.sql)
+      async getSyncStatus() {
+        const rows = check(await sb.from("sync_tokens").select("created_at, last_sync_at"));
+        return rows[0] || null;
+      },
+      async registerSyncToken(tokenHash) {
+        check(await sb.rpc("register_sync_token", { p_token_hash: tokenHash }));
+      },
+      async disconnectSync() {
+        const { data } = await sb.auth.getUser();
+        check(await sb.from("sync_tokens").delete().eq("user_id", data.user.id));
+      },
       async loadAll() {
         // Supabase returns at most 1000 rows per request, so page through.
         const fetchAll = async (table, order) => {
@@ -137,6 +149,9 @@
       async signIn() {},
       async signOut() {},
       async setDisplayName(name) { state.displayName = name; persist(); },
+      async getSyncStatus() { return null; },
+      async registerSyncToken() { throw new Error("Gmail sync isn't available in demo mode."); },
+      async disconnectSync() {},
       async loadAll() { return JSON.parse(JSON.stringify({ contacts: state.contacts, interactions: state.interactions })); },
       async importContacts(items) {
         const out = { contacts: [], interactions: [] };
