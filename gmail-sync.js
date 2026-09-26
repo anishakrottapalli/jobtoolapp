@@ -13,6 +13,8 @@
 const SUPABASE_URL = ${JSON.stringify(supabaseUrl)};
 const SUPABASE_KEY = ${JSON.stringify(supabaseKey)};
 const SYNC_TOKEN = ${JSON.stringify(token)};
+// Put this Gmail label on an email to add the people on it as contacts.
+const LABEL = 'Networking';
 
 // Run this once. It schedules the hourly check and runs the first one.
 function setup() {
@@ -34,8 +36,39 @@ function sync() {
   const contacts = new Set(rpc_('gmail_sync_contacts', { p_token: SYNC_TOKEN }));
   const me = gmail_('profile').emailAddress.toLowerCase();
   const tz = Session.getScriptTimeZone();
-  const q = encodeURIComponent('after:' + Math.floor(since / 1000) + ' -in:spam -in:trash -in:drafts -in:chats');
 
+  // 1. Everyone on an email you gave the LABEL (last 30 days) who isn't a contact yet becomes one.
+  const labeled = listIds_('label:' + LABEL.replace(/\\s+/g, '-') + ' newer_than:30d -in:drafts').map(message_);
+  const people = {};
+  labeled.forEach((m) => people_(m, me).forEach((p) => {
+    if (!contacts.has(p.email)) people[p.email] = p;
+  }));
+  const newPeople = Object.keys(people).map((k) => people[k]);
+  const added = newPeople.length ? rpc_('gmail_sync_add_contacts', { p_token: SYNC_TOKEN, p_people: newPeople }) : 0;
+  newPeople.forEach((p) => contacts.add(p.email));
+
+  // 2. Log new emails (and labeled ones) to or from contacts.
+  const recent = listIds_('after:' + Math.floor(since / 1000) + ' -in:spam -in:trash -in:drafts -in:chats')
+    .map(message_).filter((m) => m.at > since);
+  const seen = {};
+  const events = [];
+  let newest = since;
+  recent.concat(labeled).forEach((m) => {
+    if (seen[m.id]) return;
+    seen[m.id] = true;
+    if (m.at > since) newest = Math.max(newest, m.at);
+    const date = Utilities.formatDate(new Date(m.at), tz, 'yyyy-MM-dd');
+    people_(m, me).filter((p) => contacts.has(p.email))
+      .forEach((p) => events.push({ id: m.id, email: p.email, dir: m.sent ? 'out' : 'in', date: date }));
+  });
+
+  const logged = events.length ? rpc_('gmail_sync_log', { p_token: SYNC_TOKEN, p_events: events }) : 0;
+  props.setProperty('since', String(newest));
+  console.log('Checked ' + recent.length + ' new emails. Added ' + added + ' contacts, logged ' + logged + ' entries.');
+}
+
+function listIds_(query) {
+  const q = encodeURIComponent(query);
   let ids = [];
   let pageToken = '';
   do {
@@ -43,37 +76,35 @@ function sync() {
     ids = ids.concat((page.messages || []).map((m) => m.id));
     pageToken = page.nextPageToken || '';
   } while (pageToken);
-
-  const events = [];
-  let newest = since;
-  ids.forEach((id) => {
-    const m = gmail_('messages/' + id + '?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Bcc');
-    const at = Number(m.internalDate);
-    if (at <= since) return;
-    newest = Math.max(newest, at);
-    const headers = {};
-    (m.payload.headers || []).forEach((h) => {
-      const k = h.name.toLowerCase();
-      headers[k] = headers[k] ? headers[k] + ',' + h.value : h.value;
-    });
-    const date = Utilities.formatDate(new Date(at), tz, 'yyyy-MM-dd');
-    const from = addresses_(headers.from)[0];
-    if (from === me || (m.labelIds || []).indexOf('SENT') >= 0) {
-      addresses_([headers.to, headers.cc, headers.bcc].join(','))
-        .filter((a) => contacts.has(a))
-        .forEach((a) => events.push({ id: id, email: a, dir: 'out', date: date }));
-    } else if (contacts.has(from)) {
-      events.push({ id: id, email: from, dir: 'in', date: date });
-    }
-  });
-
-  const logged = events.length ? rpc_('gmail_sync_log', { p_token: SYNC_TOKEN, p_events: events }) : 0;
-  props.setProperty('since', String(newest));
-  console.log('Checked ' + ids.length + ' emails, logged ' + logged + ' new entries.');
+  return ids;
 }
 
-function addresses_(s) {
-  return (String(s || '').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi) || []).map((a) => a.toLowerCase());
+// Only the From/To/Cc/Bcc headers and date are fetched — never the subject or body.
+function message_(id) {
+  const m = gmail_('messages/' + id + '?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Bcc');
+  const headers = {};
+  (m.payload.headers || []).forEach((h) => {
+    const k = h.name.toLowerCase();
+    headers[k] = headers[k] ? headers[k] + ',' + h.value : h.value;
+  });
+  return { id: id, at: Number(m.internalDate), headers: headers, labels: m.labelIds || [] };
+}
+
+// The other people on a message: recipients if you sent it, otherwise the sender.
+function people_(m, me) {
+  const from = parse_(m.headers.from)[0];
+  m.sent = (from && from.email === me) || m.labels.indexOf('SENT') >= 0;
+  const list = m.sent ? parse_([m.headers.to, m.headers.cc, m.headers.bcc].join(',')) : (from ? [from] : []);
+  return list.filter((p) => p.email !== me);
+}
+
+// "Jane Doe" <jane@x.com>, bob@y.com  ->  [{name: 'Jane Doe', email: 'jane@x.com'}, {name: '', email: 'bob@y.com'}]
+function parse_(s) {
+  const out = [];
+  const re = /(?:"?([^"<>,@]*?)"?\\s*<)?([A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,})>?/gi;
+  let match;
+  while ((match = re.exec(String(s || '')))) out.push({ name: (match[1] || '').trim(), email: match[2].toLowerCase() });
+  return out;
 }
 
 function gmail_(path) {

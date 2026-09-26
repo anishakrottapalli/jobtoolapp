@@ -799,7 +799,8 @@
     const box = $("#sync-card");
     if (!box) return;
     const intro = `<h2 style="margin:0;font-size:16px;font-weight:600">Gmail sync</h2>
-      <p class="muted" style="margin:0">Every hour, emails you send to people in your contacts are logged as "You reached out · Email", and their emails to you as "They replied · Email". Only who and when is read — never the email itself — using read-only access.</p>`;
+      <p class="muted" style="margin:0">Every hour, emails you send to people in your contacts are logged as "You reached out · Email", and their emails to you as "They replied · Email". Only who and when is read — never the email itself — using read-only access.</p>
+      <p class="muted" style="margin:0"><b>Adding new people:</b> in Gmail, put the label <b>Networking</b> on an email. Everyone on it who isn't a contact yet is added (tagged "Added from Gmail") on the next check. Works on emails from the last 30 days.</p>`;
     if (backend.demo) {
       box.innerHTML = intro + `<p class="muted" style="margin:0">Not available in demo mode.</p>`;
       return;
@@ -859,6 +860,7 @@
         ${step(4, `Click the <b>Save</b> icon. In the dropdown next to <b>Debug</b> at the top, choose <b>setup</b>, then click <b>Run</b>.`)}
         ${step(5, `Google asks for permission: <b>Review permissions</b> → pick your account → on "Google hasn't verified this app" click <b>Advanced</b> → <b>Go to Untitled project (unsafe)</b> → <b>Allow</b>. That warning shows for every personal script; this one is only yours.`)}
         ${step(6, `The log at the bottom should say <b>All set!</b> Come back here and refresh — it will show <b>Connected</b>.`)}
+        ${step(7, `In Gmail, create the label: open any email, click the <b>Labels</b> icon (a tag shape) above it → <b>Create new</b> → type <b>Networking</b> → <b>Create</b>. From then on, give that label to any email whose people you want added.`)}
       </ol>
       <p class="muted" style="margin:0;font-size:12px">The script contains a private connection code for your contacts. Don't share it. If it's ever exposed, use "Set up again" to replace it.</p>
       <div class="actions"><button class="btn" id="sync-done">Done</button></div>`;
