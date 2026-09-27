@@ -141,6 +141,8 @@ svg { flex-shrink: 0; }
 .stat .value { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
 .stat .value.warn { color: var(--warn); }
 .stat .sub { font-size: 12px; color: var(--muted); }
+.stat-link { color: var(--fg); text-decoration: none; transition: background .12s, border-color .12s; }
+.stat-link:hover { background: var(--hover); border-color: var(--line-2); text-decoration: none; }
 .meter { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .meter div { height: 100%; background: var(--accent); border-radius: 3px; }
 

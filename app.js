@@ -32,6 +32,7 @@
     `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
   const I = {
     logo: (s = 16) => svg(s, '<circle cx="7" cy="12" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="17" cy="17" r="3"/><path d="M9.7 10.7 14.3 8.3M9.7 13.3l4.6 2.4"/>', 2),
+    home: (s = 17) => svg(s, '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'),
     users: (s = 17) => svg(s, '<path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1"/><circle cx="9" cy="8" r="4"/><path d="M22 20v-1a4 4 0 0 0-3-3.87M16 4.13a4 4 0 0 1 0 7.75"/>'),
     tag: (s = 17) => svg(s, '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>'),
     download: (s = 17) => svg(s, '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>'),
@@ -89,12 +90,6 @@
 
   const fullName = (c) => [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(" ");
   const initials = (c) => ((c.first_name || "")[0] || "").toUpperCase() + ((c.last_name || "")[0] || "").toUpperCase();
-
-  function preferredEmail(c) {
-    if (c.preferred_email === "work" && c.work_email) return c.work_email;
-    if (c.preferred_email === "personal" && c.personal_email) return c.personal_email;
-    return c.work_email || c.personal_email || "";
-  }
 
   function safeUrl(url) {
     if (!url) return "";
@@ -224,7 +219,7 @@
   function exportContacts(list) {
     const header = [
       "First Name", "Middle Name", "Last Name", "Job Title", "Company", "Location", "LinkedIn", "LinkedIn Status",
-      "Personal Email", "Personal Email Status", "Work Email", "Work Email Status", "Preferred Email",
+      "Personal Email", "Personal Email Status", "Work Email", "Work Email Status",
       "Phone", "Contacted", "Times Contacted", "Last Contacted On", "Last Contacted Via",
       "Replied", "Times Replied", "Last Replied On", "Last Replied Via",
       "Referred By", "Event Met At", "Notes", "Tags", "Added On",
@@ -232,7 +227,7 @@
     const rows = list.map(({ c, s }) => [
       c.first_name, c.middle_name, c.last_name, c.job_title, c.company, c.location, c.linkedin_url,
       liLabel(c.linkedin_status), c.personal_email, c.personal_email ? statusLabel(c.personal_email_status) : "",
-      c.work_email, c.work_email ? statusLabel(c.work_email_status) : "", preferredEmail(c),
+      c.work_email, c.work_email ? statusLabel(c.work_email_status) : "",
       c.phone, s.lastOut ? "Yes" : "No", s.outreach.length, s.lastOut ? s.lastOut.happened_on : "",
       s.lastOut ? s.lastOut.method : "", s.lastReply ? "Yes" : "No", s.replies.length,
       s.lastReply ? s.lastReply.happened_on : "", s.lastReply ? s.lastReply.method : "",
@@ -292,7 +287,6 @@
     personal_email_status: ["personalemailstatus"],
     work_email: ["workemail", "businessemail", "email2"],
     work_email_status: ["workemailstatus"],
-    preferred_email: ["preferredemail"],
     phone: ["phone", "phonenumber", "mobile", "cell"],
     referred_by: ["referredby", "referral", "referrer"],
     event_met_at: ["eventmetat", "event", "metat"],
@@ -308,7 +302,7 @@
     job_title: "Job title", company: "Company", location: "Location", linkedin_url: "LinkedIn",
     linkedin_status: "LinkedIn status", connected_on: "Connected on (LinkedIn)",
     personal_email: "Personal email", personal_email_status: "Personal email status", work_email: "Work email",
-    work_email_status: "Work email status", preferred_email: "Preferred email", phone: "Phone",
+    work_email_status: "Work email status", phone: "Phone",
     referred_by: "Referred by", event_met_at: "Event met at", notes: "Notes", tags: "Tags",
     last_contacted_on: "Last contacted date", last_contacted_via: "Last contacted method",
     last_replied_on: "Last replied date", last_replied_via: "Last replied method",
@@ -368,15 +362,11 @@
         linkedin_status: rec.connected_on ? "connected" : toLiStatus(rec.linkedin_status),
         personal_email: rec.personal_email || "", personal_email_status: toStatus(rec.personal_email_status),
         work_email: rec.work_email || "", work_email_status: toStatus(rec.work_email_status),
-        preferred_email: null, phone: rec.phone || "", referred_by: rec.referred_by || "",
+        phone: rec.phone || "", referred_by: rec.referred_by || "",
         event_met_at: rec.event_met_at || "", notes: rec.notes || "",
         tags: [...new Set(String(rec.tags || "").split(/[;,]/).map((t) => t.trim()).filter(Boolean)
           .map((t) => known.get(t.toLowerCase()) || t))],
       };
-      const pref = String(rec.preferred_email || "").toLowerCase();
-      if (pref && (pref === contact.work_email.toLowerCase() || pref === "work")) contact.preferred_email = "work";
-      else if (pref && (pref === contact.personal_email.toLowerCase() || pref === "personal")) contact.preferred_email = "personal";
-
       const emails = [contact.personal_email, contact.work_email].filter(Boolean).map((e) => e.toLowerCase());
       const nameKey = (fullName(contact) + "|" + contact.company).toLowerCase();
       if (emails.some((e) => seenEmails.has(e)) || seenNames.has(nameKey)) { dupes++; continue; }
@@ -436,7 +426,8 @@
         <nav class="sidebar" aria-label="Main">
           <a class="brand" href="#/"><span class="brand-mark">${I.logo()}</span>Networking</a>
           ${section("workspace", "Workspace", `
-            <a class="nav-item" data-nav="contacts" href="#/">${I.users()}<span>Contacts</span><span class="count mono" id="nav-count"></span></a>
+            <a class="nav-item" data-nav="dashboard" href="#/">${I.home()}<span>Dashboard</span></a>
+            <a class="nav-item" data-nav="contacts" href="#/contacts">${I.users()}<span>Contacts</span><span class="count mono" id="nav-count"></span></a>
             <a class="nav-item" data-nav="tags" href="#/tags">${I.tag()}<span>Tags</span></a>
             <a class="nav-item" data-nav="export" href="#/export">${I.download()}<span>Export</span></a>`)}
           ${section("account", "Account", `
@@ -480,7 +471,11 @@
     search.value = state.filters.q;
     search.addEventListener("input", () => {
       state.filters.q = search.value;
-      if (state.route.page !== "contacts") location.hash = "#/";
+      if (state.route.page !== "contacts") {
+        state.filters.status = "all";
+        state.filters.tag = "";
+        location.hash = "#/contacts";
+      }
       else renderRows();
     });
     updateShell();
@@ -501,6 +496,7 @@
     if (p === "tags") renderTagsPage(page);
     else if (p === "export") renderExportPage(page);
     else if (p === "settings") renderSettingsPage(page);
+    else if (p === "dashboard") renderDashboardPage(page);
     else renderContactsPage(page);
     updateShell();
   }
@@ -586,30 +582,48 @@
       </section>`;
   }
 
-  function renderContactsPage(page) {
+  function renderDashboardPage(page) {
     const st = stats();
     const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+    // Each summary card opens the Contacts page with the matching filter.
+    const stat = (status, body) => `<a class="card stat stat-link" href="#/contacts" data-go-status="${status}">${body}</a>`;
     page.innerHTML = `
       ${takeFlash()}
       <div class="page-head">
         <div><div class="date">${esc(today)}</div><h1>Welcome back, ${esc(state.displayName)}</h1></div>
         <div class="actions">
           <a class="btn" href="#/new">${I.plus(15)} Add Contact</a>
-          <button class="btn" id="qa-export" title="Download the contacts shown below">${I.download(15)} Export CSV</button>
-          <a class="btn" href="#/import">${I.upload(15)} Import</a>
+          <a class="btn" href="#/contacts">${I.users(15)} View Contacts</a>
         </div>
       </div>
       ${todayCard()}
       <div class="stats">
-        <div class="card stat"><span class="label">Total Contacts</span><span class="value">${st.total}</span>
-          <span class="sub">${st.addedThisWeek ? `+${st.addedThisWeek} added this week` : "None added this week"}</span></div>
-        <div class="card stat"><span class="label">Reply Rate</span><span class="value">${st.rate == null ? "—" : st.rate + "%"}</span>
+        ${stat("all", `<span class="label">Total Contacts</span><span class="value">${st.total}</span>
+          <span class="sub">${st.addedThisWeek ? `+${st.addedThisWeek} added this week` : "None added this week"}</span>`)}
+        ${stat("replied", `<span class="label">Reply Rate</span><span class="value">${st.rate == null ? "—" : st.rate + "%"}</span>
           <div class="meter"><div style="width:${st.rate || 0}%"></div></div>
-          <span class="sub">${st.contacted ? `${st.replied} of ${st.contacted} contacted replied` : "Log outreach to see this"}</span></div>
-        <div class="card stat"><span class="label">Contacted This Week</span><span class="value">${st.contactedThisWeek}</span>
-          <span class="sub">Since ${esc(st.mondayLabel)}</span></div>
-        <div class="card stat"><span class="label">Pending Follow-ups</span><span class="value${st.pending ? " warn" : ""}">${st.pending}</span>
-          <span class="sub">Contacted, no reply yet</span></div>
+          <span class="sub">${st.contacted ? `${st.replied} of ${st.contacted} contacted replied` : "Log outreach to see this"}</span>`)}
+        ${stat("contacted", `<span class="label">Contacted This Week</span><span class="value">${st.contactedThisWeek}</span>
+          <span class="sub">Since ${esc(st.mondayLabel)}</span>`)}
+        ${stat("waiting", `<span class="label">Pending Follow-ups</span><span class="value${st.pending ? " warn" : ""}">${st.pending}</span>
+          <span class="sub">Contacted, no reply yet</span>`)}
+      </div>`;
+    $$("[data-go-status]", page).forEach((a) => a.addEventListener("click", () => {
+      state.filters = { q: "", status: a.dataset.goStatus, tag: "" };
+      $("#search").value = "";
+    }));
+  }
+
+  function renderContactsPage(page) {
+    page.innerHTML = `
+      ${takeFlash()}
+      <div class="page-head">
+        <div><h1>Contacts</h1></div>
+        <div class="actions">
+          <a class="btn" href="#/new">${I.plus(15)} Add Contact</a>
+          <button class="btn" id="qa-export" title="Download the contacts shown below">${I.download(15)} Export CSV</button>
+          <a class="btn" href="#/import">${I.upload(15)} Import</a>
+        </div>
       </div>
       <section class="card table-card" aria-label="Contacts">
         <div class="table-head">
@@ -716,7 +730,7 @@
     page.innerHTML = `
       <div class="page-head"><div><h1>Tags</h1></div></div>
       ${tags.length ? `<div class="tag-grid">
-        ${tags.map(([t, n]) => `<a class="card tag-card" href="#/" data-tag="${esc(t)}"><b>${esc(t)}</b><span>${n} contact${n === 1 ? "" : "s"}</span></a>`).join("")}
+        ${tags.map(([t, n]) => `<a class="card tag-card" href="#/contacts" data-tag="${esc(t)}"><b>${esc(t)}</b><span>${n} contact${n === 1 ? "" : "s"}</span></a>`).join("")}
       </div>` : `<div class="card empty"><p>No tags yet. Add tags when you create or edit a contact, like "alumni" or "fintech".</p></div>`}
       ${untagged && tags.length ? `<p class="muted">${untagged} contact${untagged === 1 ? " has" : "s have"} no tags.</p>` : ""}`;
     $$("[data-tag]", page).forEach((a) => a.addEventListener("click", () => {
@@ -891,7 +905,7 @@
     if (id && !contact) {
       box.innerHTML = "";
       state.flash = "That contact wasn't found.";
-      location.hash = "#/";
+      location.hash = baseHash();
       return;
     }
     document.body.style.overflow = "hidden";
@@ -907,7 +921,7 @@
 
   function closePanel() {
     state.logOpen = false;
-    location.hash = "#/";
+    location.hash = baseHash();
   }
 
   const closeBtn = `<button class="icon-btn" data-close aria-label="Close">${I.close()}</button>`;
@@ -918,10 +932,8 @@
     const email = c[which + "_email"];
     if (!email) return "";
     const status = c[which + "_email_status"];
-    const preferred = preferredEmail(c) === email && (c.preferred_email === which || !(c.personal_email && c.work_email));
     return `<div class="email-item">
       <div class="kv"><span>${label}</span><a href="mailto:${esc(email)}" class="${status === "bounced" ? "bounced" : ""}">${esc(email)}</a></div>
-      ${preferred && c.preferred_email ? `<span class="badge sm solid">Preferred</span>` : ""}
       ${status === "verified" ? `<span class="badge sm yes">${I.check(11)} Verified</span>` : ""}
       ${status === "bounced" ? `<span class="badge sm warn">${I.alert()} Bounced</span>` : ""}
     </div>`;
@@ -1100,12 +1112,6 @@
         <section class="section"><h3>Email</h3>
           ${email("work", "Work email")}
           ${email("personal", "Personal email")}
-          <div class="field"><span class="label">Preferred email</span>
-            <div class="radio-row">
-              ${[["work", "Work"], ["personal", "Personal"], ["", "No preference"]].map(([v, l]) =>
-                `<label><input type="radio" name="preferred_email" value="${v}"${(c.preferred_email || "") === v ? " checked" : ""}> ${l}</label>`).join("")}
-            </div>
-          </div>
         </section>
         <section class="section"><h3>Details</h3>
           <div class="cols-2">
@@ -1168,7 +1174,6 @@
       const fd = new FormData(form);
       const data = { id: existing ? existing.id : undefined, tags };
       for (const [k, v] of fd.entries()) data[k] = typeof v === "string" ? v.trim() : v;
-      data.preferred_email = data.preferred_email || null;
       if (data.linkedin_url) data.linkedin_url = safeUrl(data.linkedin_url) || data.linkedin_url;
       const saved = await run(() => backend.saveContact(data), el);
       if (existing) {
@@ -1189,7 +1194,7 @@
         state.contacts = state.contacts.filter((x) => x.id !== existing.id);
         state.interactions = state.interactions.filter((x) => x.contact_id !== existing.id);
         state.flash = `Deleted ${fullName(existing)}.`;
-        location.hash = "#/";
+        location.hash = baseHash();
       });
     }
   }
@@ -1243,7 +1248,7 @@
       state.interactions.push(...result.interactions);
       state.flash = `Imported ${result.contacts.length} contact${result.contacts.length === 1 ? "" : "s"}.`;
       state.importPlan = null;
-      location.hash = "#/";
+      location.hash = "#/contacts";
     });
   }
 
@@ -1301,15 +1306,20 @@
   function parseRoute() {
     const h = (location.hash || "#/").slice(1);
     let m;
-    if ((m = h.match(/^\/contact\/([^/]+)\/edit$/))) return { page: "contacts", panel: "edit", id: decodeURIComponent(m[1]) };
-    if ((m = h.match(/^\/contact\/([^/]+)$/))) return { page: "contacts", panel: "view", id: decodeURIComponent(m[1]) };
-    if (h === "/new") return { page: "contacts", panel: "edit" };
-    if (h === "/import") return { page: "contacts", panel: "import" };
+    // Side panels open over whichever of Dashboard / Contacts you were on.
+    const under = state.route && state.route.page === "dashboard" ? "dashboard" : "contacts";
+    if ((m = h.match(/^\/contact\/([^/]+)\/edit$/))) return { page: under, panel: "edit", id: decodeURIComponent(m[1]) };
+    if ((m = h.match(/^\/contact\/([^/]+)$/))) return { page: under, panel: "view", id: decodeURIComponent(m[1]) };
+    if (h === "/new") return { page: under, panel: "edit" };
+    if (h === "/import") return { page: under, panel: "import" };
+    if (h === "/contacts") return { page: "contacts" };
     if (h === "/tags") return { page: "tags" };
     if (h === "/export") return { page: "export" };
     if (h === "/settings") return { page: "settings" };
-    return { page: "contacts" };
+    return { page: "dashboard" };
   }
+
+  const baseHash = () => (state.route.page === "dashboard" ? "#/" : "#/contacts");
 
   function route() {
     const prev = state.route;

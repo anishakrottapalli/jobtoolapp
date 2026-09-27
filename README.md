@@ -3,7 +3,7 @@
 A single place to track networking contacts: who you've reached out to, how, whether they replied, and context about each person.
 
 **Phase 1: Contacts database**
-- Add, edit, and delete contacts: name, job title, company, location, LinkedIn, personal and work emails (each marked not checked, verified, or bounced, plus a preferred email), phone, referred by, event met at, notes, and tags
+- Add, edit, and delete contacts: name, job title, company, location, LinkedIn, personal and work emails (each marked not checked, verified, or bounced), phone, referred by, event met at, notes, and tags
 - Outreach and reply history for each contact (date, method, note). "Contacted" and "Replied" are worked out from this history.
 - Search, filter (contacted, replied, waiting for reply, tag), and sort
 - CSV export of contacts and of the full history

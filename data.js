@@ -6,7 +6,7 @@
   const CONTACT_FIELDS = [
     "first_name", "middle_name", "last_name", "job_title", "company", "location",
     "linkedin_url", "linkedin_status", "personal_email", "personal_email_status", "work_email",
-    "work_email_status", "preferred_email", "phone", "referred_by", "event_met_at",
+    "work_email_status", "phone", "referred_by", "event_met_at",
     "notes", "tags",
   ];
   const INTERACTION_FIELDS = ["contact_id", "kind", "method", "happened_on", "note"];
@@ -118,12 +118,12 @@
       const a = uid(), b = uid(), c = uid();
       const blank = { middle_name: "", location: "", linkedin_url: "", linkedin_status: "none", phone: "", referred_by: "",
         event_met_at: "", notes: "", work_email: "", personal_email: "",
-        personal_email_status: "unchecked", work_email_status: "unchecked", preferred_email: null, tags: [] };
+        personal_email_status: "unchecked", work_email_status: "unchecked", tags: [] };
       return {
         contacts: [
           { ...blank, id: a, first_name: "Priya", last_name: "Shah", job_title: "Engineering Manager",
             company: "Acme Corp", location: "Seattle, WA", work_email: "priya@acme.example",
-            work_email_status: "verified", preferred_email: "work", referred_by: "Jordan Lee", linkedin_status: "connected",
+            work_email_status: "verified", referred_by: "Jordan Lee", linkedin_status: "connected",
             event_met_at: "Women in Tech Mixer", notes: "Hiring for Q4 platform team.",
             tags: ["alumni", "hiring"], created_at: now() },
           { ...blank, id: b, first_name: "Marcus", middle_name: "T", last_name: "Nguyen",
