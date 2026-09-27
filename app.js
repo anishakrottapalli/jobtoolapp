@@ -50,15 +50,7 @@
     alert: (s = 11) => svg(s, '<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h0"/>', 2.5),
     trash: (s = 14) => svg(s, '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'),
     signout: (s = 15) => svg(s, '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>'),
-    // contact methods
-    Email: (s = 13) => svg(s, '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>', 2),
-    LinkedIn: (s = 13) => svg(s, '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>', 2),
-    "Phone call": (s = 13) => svg(s, '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>', 2),
-    Text: (s = 13) => svg(s, '<path d="M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z"/>', 2),
-    "In person": (s = 13) => svg(s, '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>', 2),
-    Other: (s = 13) => svg(s, '<circle cx="12" cy="12" r="8"/>', 2),
   };
-  const methodIcon = (m) => (I[m] || I.Other)(13);
 
   // ---------- helpers ----------
 
@@ -389,9 +381,11 @@
 
   // ---------- small render pieces ----------
 
+  // Every platform you've reached out on, most recent first.
+  const outMethods = (s) => [...new Set(s.outreach.map((i) => i.method))].join(", ");
   function outBadge(s) {
     return s.lastOut
-      ? `<span class="badge yes" title="${esc(fmtDate(s.lastOut.happened_on))}">${methodIcon(s.lastOut.method)} Yes · ${esc(s.lastOut.method)}</span>`
+      ? `<span class="badge yes" title="Last reached out ${esc(fmtDate(s.lastOut.happened_on))}">Yes · ${esc(outMethods(s))}</span>`
       : `<span class="badge">No</span>`;
   }
   function replyBadge(s) {
@@ -966,7 +960,7 @@
         ${flash}
         <div class="cols-2">
           <div class="status-box"><span class="l">Contacted${s.outreach.length ? ` · ${s.outreach.length} time${s.outreach.length === 1 ? "" : "s"}` : ""}</span>
-            ${s.lastOut ? `<span class="v">Yes · ${esc(s.lastOut.method)}</span><span class="s">${esc(fmtDate(s.lastOut.happened_on))}</span>` : `<span class="v">No</span><span class="s">Nothing logged yet</span>`}</div>
+            ${s.lastOut ? `<span class="v">Yes · ${esc(outMethods(s))}</span><span class="s">Last: ${esc(fmtDate(s.lastOut.happened_on))} via ${esc(s.lastOut.method)}</span>` : `<span class="v">No</span><span class="s">Nothing logged yet</span>`}</div>
           <div class="status-box"><span class="l">Replied${s.replies.length ? ` · ${s.replies.length} time${s.replies.length === 1 ? "" : "s"}` : ""}</span>${repliedBox}</div>
         </div>
 
