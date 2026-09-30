@@ -768,6 +768,8 @@
 
   // ---------- applications ----------
 
+  // Text submitted with an application.
+  const APP_DOCS = [["resume_text", "Resume"], ["cover_letter", "Cover letter"], ["application_answers", "Application answers"]];
   const trackLabel = (t) => (TRACKS.find(([v]) => v === t) || [, ""])[1];
 
   // Status is To Start / Completed; the stage shown is derived from the dates.
@@ -801,7 +803,7 @@
       if (stage === "inplay" && (st.key === "rejected" || st.key === "to_start")) return false;
       if (stage !== "all" && stage !== "inplay" && st.key !== stage) return false;
       if (track && a.resume_track !== track) return false;
-      if (needle && ![a.position_title, a.company, a.location, a.notes].join(" ").toLowerCase().includes(needle)) return false;
+      if (needle && ![a.position_title, a.company, a.location, a.notes, a.resume_text, a.cover_letter, a.application_answers].join(" ").toLowerCase().includes(needle)) return false;
       return true;
     });
     const { key, dir } = state.appSort;
@@ -818,10 +820,10 @@
 
   function exportApplications(list) {
     const header = ["Position Title", "Company", "Location", "Job Link", "Status", "Stage", "Date Applied",
-      "Interview Dates", "Rejection Date", "Resume Track", "Notes"];
+      "Interview Dates", "Rejection Date", "Resume Track", "Notes", "Resume", "Cover Letter", "Application Answers"];
     downloadCsv(`applications-${todayISO()}.csv`, header, list.map(({ a, st }) => [
       a.position_title, a.company, a.location, a.job_url, a.status === "completed" ? "Completed" : "To Start", st.label,
-      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, trackLabel(a.resume_track), a.notes,
+      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, trackLabel(a.resume_track), a.notes, a.resume_text, a.cover_letter, a.application_answers,
     ]));
   }
 
@@ -951,6 +953,15 @@
         <section class="section"><h3>Notes</h3>
           ${a.notes ? `<p class="notes-box">${esc(a.notes)}</p>` : `<span class="muted">No notes</span>`}
         </section>
+        ${APP_DOCS.map(([k, label]) => `
+        <section class="section"><h3>${label}</h3>
+          ${a[k] ? `<details class="doc">
+              <summary><span>${esc(a[k].trim().split(/\s+/).slice(0, 14).join(" "))}…</span><span class="muted small">${a[k].trim().split(/\s+/).length} words · show</span></summary>
+              <p class="notes-box">${esc(a[k])}</p>
+            </details>
+            <div><button class="btn" type="button" data-copy-doc="${k}">${I.check(13)} Copy ${label.toLowerCase()}</button></div>`
+          : `<span class="muted">None added</span>`}
+        </section>`).join("")}
         <section class="section"><h3>Timeline</h3>
           ${actionForm}
           ${events.length ? `<div class="timeline">${events.map((e) => `
@@ -969,6 +980,13 @@
         <a class="btn lg" href="#/application/${esc(a.id)}/edit">Edit</a>
       </div>`;
 
+    $$("[data-copy-doc]", el).forEach((b) => b.addEventListener("click", async () => {
+      const text = a[b.dataset.copyDoc] || "";
+      try { await navigator.clipboard.writeText(text); } catch (e) { /* clipboard blocked */ }
+      const label = b.innerHTML;
+      b.textContent = "Copied ✓";
+      setTimeout(() => (b.innerHTML = label), 1500);
+    }));
     $$("[data-app-act]", el).forEach((b) => b.addEventListener("click", () => {
       state.appAction = b.dataset.appAct === "applied" ? "applied" : b.dataset.appAct;
       renderAppView(el, a);
@@ -1026,6 +1044,10 @@
         </section>
         <section class="section"><h3>Notes</h3>
           <div class="field"><label for="a-notes" class="sr-only">Notes</label><textarea id="a-notes" name="notes">${esc(a.notes)}</textarea></div>
+        </section>
+        <section class="section"><h3>What you submitted</h3>
+          ${APP_DOCS.map(([k, label]) => `<div class="field"><label for="a-${k}">${label}</label>
+            <textarea id="a-${k}" name="${k}" rows="6" placeholder="Paste the ${label.toLowerCase()} you used">${esc(a[k])}</textarea></div>`).join("")}
         </section>
       </form>
       <div class="panel-foot">

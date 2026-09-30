@@ -271,6 +271,14 @@ svg { flex-shrink: 0; }
 .email-item .kv { flex-grow: 1; }
 .email-item .bounced { color: var(--muted); text-decoration: line-through; }
 .notes-box { margin: 0; font-size: 14px; line-height: 1.55; color: var(--fg-2); background: var(--card-2); border: 1px solid #242B35; border-radius: 10px; padding: 12px 14px; white-space: pre-wrap; }
+.doc { border: 1px solid #242B35; border-radius: 10px; background: var(--card-2); }
+.doc summary { display: flex; justify-content: space-between; gap: 12px; padding: 10px 14px; cursor: pointer; font-size: 14px; color: var(--fg-2); list-style: none; }
+.doc summary::-webkit-details-marker { display: none; }
+.doc summary span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc summary .small { white-space: nowrap; }
+.doc[open] summary .small { visibility: hidden; }
+.doc .notes-box { border: none; border-top: 1px solid #242B35; border-radius: 0 0 10px 10px; margin: 0; max-height: 420px; overflow-y: auto; }
+.small { font-size: 12px; }
 .timeline { display: flex; flex-direction: column; }
 .tl-item { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
 .tl-item:last-child { border-bottom: none; }
