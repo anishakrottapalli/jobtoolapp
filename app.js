@@ -955,11 +955,9 @@
         </section>
         ${APP_DOCS.map(([k, label]) => `
         <section class="section"><h3>${label}</h3>
-          ${a[k] ? `<details class="doc">
-              <summary><span>${esc(a[k].trim().split(/\s+/).slice(0, 14).join(" "))}…</span><span class="muted small">${a[k].trim().split(/\s+/).length} words · show</span></summary>
-              <p class="notes-box">${esc(a[k])}</p>
-            </details>
-            <div><button class="btn" type="button" data-copy-doc="${k}">${I.check(13)} Copy ${label.toLowerCase()}</button></div>`
+          ${a[k] ? `<p class="notes-box doc-full">${esc(a[k])}</p>
+            <div class="doc-actions"><button class="btn" type="button" data-copy-doc="${k}">${I.check(13)} Copy ${label.toLowerCase()}</button>
+              <span class="muted small">${a[k].trim().split(/\s+/).length} words</span></div>`
           : `<span class="muted">None added</span>`}
         </section>`).join("")}
         <section class="section"><h3>Timeline</h3>
@@ -1047,7 +1045,7 @@
         </section>
         <section class="section"><h3>What you submitted</h3>
           ${APP_DOCS.map(([k, label]) => `<div class="field"><label for="a-${k}">${label}</label>
-            <textarea id="a-${k}" name="${k}" rows="6" placeholder="Paste the ${label.toLowerCase()} you used">${esc(a[k])}</textarea></div>`).join("")}
+            <textarea id="a-${k}" name="${k}" class="autogrow" rows="6" placeholder="Paste the ${label.toLowerCase()} you used">${esc(a[k])}</textarea></div>`).join("")}
         </section>
       </form>
       <div class="panel-foot">
@@ -1056,6 +1054,12 @@
       </div>`;
 
     const form = $("#app-form", el);
+    // Long text boxes grow to fit everything pasted into them.
+    $$("textarea.autogrow", el).forEach((ta) => {
+      const fit = () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + 2 + "px"; };
+      ta.addEventListener("input", fit);
+      requestAnimationFrame(fit);
+    });
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       if (!form.position_title.value.trim()) {
