@@ -67,7 +67,8 @@
         const [contacts, interactions, applications] = await Promise.all([
           fetchAll("contacts", "created_at"),
           fetchAll("interactions", "happened_on"),
-          fetchAll("applications", "created_at"),
+          // Tolerate a database that hasn't had the applications migration yet.
+          fetchAll("applications", "created_at").catch(() => []),
         ]);
         return { contacts, interactions, applications };
       },
