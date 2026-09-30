@@ -770,7 +770,7 @@
 
   const trackLabel = (t) => (TRACKS.find(([v]) => v === t) || [, ""])[1];
 
-  // Status is To Start / Completed (as in Notion); the stage shown is derived from the dates.
+  // Status is To Start / Completed; the stage shown is derived from the dates.
   function stageOf(a) {
     if (a.status !== "completed") return { key: "to_start", label: "To Start", cls: "" };
     if (a.rejection_date) return { key: "rejected", label: "Rejected", cls: "muted-badge" };
@@ -818,10 +818,10 @@
 
   function exportApplications(list) {
     const header = ["Position Title", "Company", "Location", "Job Link", "Status", "Stage", "Date Applied",
-      "Interview Dates", "Rejection Date", "Resume Track", "Notes", "Notion Page"];
+      "Interview Dates", "Rejection Date", "Resume Track", "Notes"];
     downloadCsv(`applications-${todayISO()}.csv`, header, list.map(({ a, st }) => [
       a.position_title, a.company, a.location, a.job_url, a.status === "completed" ? "Completed" : "To Start", st.label,
-      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, trackLabel(a.resume_track), a.notes, a.notion_url,
+      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, trackLabel(a.resume_track), a.notes,
     ]));
   }
 
@@ -913,7 +913,6 @@
     const flash = takeFlash();
     const sub = [a.company, a.location].filter(Boolean).join(" · ");
     const job = safeUrl(a.job_url);
-    const notion = safeUrl(a.notion_url);
     const interviews = [...(a.interview_dates || [])].sort();
     const events = [];
     if (a.status === "completed" && a.date_applied) events.push({ date: a.date_applied, text: "Applied", kind: "outreach" });
@@ -948,7 +947,6 @@
           ${kv("Job posting", job ? `<a href="${esc(job)}" target="_blank" rel="noopener">Open posting ↗</a>` : "")}
           ${kv("Resume track", esc(trackLabel(a.resume_track)))}
           ${kv("Location", esc(a.location))}
-          ${kv("Notion page", notion ? `<a href="${esc(notion)}" target="_blank" rel="noopener">Open in Notion ↗</a>` : "")}
         </section>
         <section class="section"><h3>Notes</h3>
           ${a.notes ? `<p class="notes-box">${esc(a.notes)}</p>` : `<span class="muted">No notes</span>`}

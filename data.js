@@ -12,7 +12,7 @@
   const INTERACTION_FIELDS = ["contact_id", "kind", "method", "happened_on", "note"];
   const APPLICATION_FIELDS = [
     "position_title", "company", "location", "job_url", "status", "date_applied", "rejection_date",
-    "interview_dates", "resume_track", "notes", "notion_url",
+    "interview_dates", "resume_track", "notes",
   ];
 
   function pick(obj, fields) {
@@ -155,16 +155,16 @@
         applications: [
           { id: uid(), position_title: "Associate Product Manager", company: "Acme Corp", location: "Seattle, WA",
             job_url: "https://jobs.example.com/apm", status: "completed", date_applied: "2026-09-02", rejection_date: null,
-            interview_dates: ["2026-09-18", "2026-09-25"], resume_track: "product", notes: "Referred by Priya.", notion_url: null, created_at: now() },
+            interview_dates: ["2026-09-18", "2026-09-25"], resume_track: "product", notes: "Referred by Priya.", created_at: now() },
           { id: uid(), position_title: "Creative Operations Coordinator", company: "Globex", location: "Remote",
             job_url: "", status: "completed", date_applied: "2026-06-20", rejection_date: null,
-            interview_dates: [], resume_track: "ea_creative_ops", notes: "", notion_url: null, created_at: now() },
+            interview_dates: [], resume_track: "ea_creative_ops", notes: "", created_at: now() },
           { id: uid(), position_title: "Content Operations Specialist", company: "Initech", location: "New York, NY",
             job_url: "", status: "completed", date_applied: "2026-09-05", rejection_date: "2026-09-20",
-            interview_dates: [], resume_track: "content_media_ops", notes: "", notion_url: null, created_at: now() },
+            interview_dates: [], resume_track: "content_media_ops", notes: "", created_at: now() },
           { id: uid(), position_title: "Product Analyst", company: "Umbrella", location: "Los Angeles, CA",
             job_url: "", status: "to_start", date_applied: null, rejection_date: null,
-            interview_dates: [], resume_track: null, notes: "", notion_url: null, created_at: now() },
+            interview_dates: [], resume_track: null, notes: "", created_at: now() },
         ],
       };
     }
