@@ -151,7 +151,11 @@ svg { flex-shrink: 0; }
 .today-msg { display: flex; flex-direction: column; gap: 8px; }
 .today-msg .label { font-size: 13px; color: var(--muted); }
 .today-msg p { margin: 0; font-size: 19px; font-weight: 600; line-height: 1.35; letter-spacing: -0.01em; }
-.today-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.today-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.section-title { margin: 4px 0 -10px; font-size: 13px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.badge.muted-badge { color: var(--muted); border-style: dashed; }
+.grid-row.apps { grid-template-columns: 2.4fr 1.5fr 1.3fr 1fr 1.5fr 1.2fr 44px; }
+.grid-row.apps .m-co { display: none; }
 .today-tile { background: var(--card-2); border: 1px solid #242B35; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
 .today-tile .n { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; color: var(--accent-text); }
 .today-tile .l { font-size: 12px; color: var(--muted); }
@@ -330,6 +334,8 @@ svg { flex-shrink: 0; }
 @media (max-width: 1180px) {
   .grid-row { grid-template-columns: 2.1fr 1.3fr 1.5fr 1.5fr 1.6fr 44px; }
   .grid-row .col-ref { display: none; }
+  .grid-row.apps { grid-template-columns: 2.4fr 1.5fr 1fr 1.5fr 44px; }
+  .grid-row.apps .col-loc, .grid-row.apps .col-track { display: none; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {
@@ -366,6 +372,9 @@ svg { flex-shrink: 0; }
   .grid-row.item .col-menu { order: 1; }
   .grid-row.item .col-company, .grid-row.item .col-ref { display: none; }
   .m-co { display: inline; }
+  .grid-row.apps .m-co { display: inline; }
+  .grid-row.apps.item .col-date, .grid-row.apps.item .col-loc, .grid-row.apps.item .col-track { display: none; }
+  .grid-row.apps.item .col-stage { order: 2; }
   .grid-row.item .col-out, .grid-row.item .col-rep { order: 2; }
   .grid-row.item .col-tags { order: 3; flex-basis: 100%; }
   .grid-row.item .col-tags:empty { display: none; }

@@ -24,7 +24,16 @@
     loaded: false,
     route: { page: "contacts" },
     importPlan: null,
+    applications: [],
+    appFilters: { q: "", stage: "inplay", track: "" },
+    appSort: { key: "date_applied", dir: -1 },
+    appAction: null,
   };
+
+  const TRACKS = [["product", "Product"], ["ea_creative_ops", "EA–Creative Ops"], ["content_media_ops", "Content–Media Ops"]];
+  const GHOST_DAYS = 60;
+  const APP_FILTERS = [["all", "All"], ["inplay", "In play"], ["to_start", "To Start"], ["applied", "Applied"],
+    ["interviewing", "Interviewing"], ["ghosted", "Ghosted"], ["rejected", "Rejected"]];
 
   // ---------- icons (inline stroke SVG) ----------
 
@@ -33,6 +42,8 @@
   const I = {
     logo: (s = 16) => svg(s, '<circle cx="7" cy="12" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="17" cy="17" r="3"/><path d="M9.7 10.7 14.3 8.3M9.7 13.3l4.6 2.4"/>', 2),
     home: (s = 17) => svg(s, '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>'),
+    briefcase: (s = 17) => svg(s, '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>'),
+    external: (s = 15) => svg(s, '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>'),
     users: (s = 17) => svg(s, '<path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1"/><circle cx="9" cy="8" r="4"/><path d="M22 20v-1a4 4 0 0 0-3-3.87M16 4.13a4 4 0 0 1 0 7.75"/>'),
     tag: (s = 17) => svg(s, '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>'),
     download: (s = 17) => svg(s, '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>'),
@@ -422,6 +433,7 @@
           ${section("workspace", "Workspace", `
             <a class="nav-item" data-nav="dashboard" href="#/">${I.home()}<span>Dashboard</span></a>
             <a class="nav-item" data-nav="contacts" href="#/contacts">${I.users()}<span>Contacts</span><span class="count mono" id="nav-count"></span></a>
+            <a class="nav-item" data-nav="applications" href="#/applications">${I.briefcase()}<span>Applications</span><span class="count mono" id="nav-app-count"></span></a>
             <a class="nav-item" data-nav="tags" href="#/tags">${I.tag()}<span>Tags</span></a>
             <a class="nav-item" data-nav="export" href="#/export">${I.download()}<span>Export</span></a>`)}
           ${section("account", "Account", `
@@ -464,6 +476,11 @@
     const search = $("#search");
     search.value = state.filters.q;
     search.addEventListener("input", () => {
+      if (state.route.page === "applications") {
+        state.appFilters.q = search.value;
+        renderAppRows();
+        return;
+      }
       state.filters.q = search.value;
       if (state.route.page !== "contacts") {
         state.filters.status = "all";
@@ -477,6 +494,16 @@
 
   function updateShell() {
     $("#nav-count").textContent = state.contacts.length || "";
+    $("#nav-app-count").textContent = state.applications.length || "";
+    const search = $("#search");
+    const onApps = state.route.page === "applications";
+    search.placeholder = onApps ? "Search applications" : "Search contacts";
+    const addBtn = $(".topbar .btn.primary");
+    addBtn.href = onApps ? "#/new-application" : "#/new";
+    addBtn.setAttribute("aria-label", onApps ? "Add Application" : "Add Contact");
+    $(".add-label", addBtn).textContent = onApps ? "Add Application" : "Add Contact";
+    const q = onApps ? state.appFilters.q : state.filters.q;
+    if (document.activeElement !== search && search.value !== q) search.value = q;
     $("#me-name").textContent = state.displayName;
     $("#me-initials").textContent = state.displayName.slice(0, 2).toUpperCase();
     $$(".nav-item").forEach((a) => a.classList.toggle("active", a.dataset.nav === state.route.page));
@@ -491,6 +518,7 @@
     else if (p === "export") renderExportPage(page);
     else if (p === "settings") renderSettingsPage(page);
     else if (p === "dashboard") renderDashboardPage(page);
+    else if (p === "applications") renderApplicationsPage(page);
     else renderContactsPage(page);
     updateShell();
   }
@@ -533,6 +561,7 @@
       liRequests: li.filter((i) => i.method === "Request sent" || i.method === "Followed").length,
       liConnected: li.filter((i) => i.method === "Connected").length,
       added: state.contacts.filter((c) => c.created_at && isoOf(new Date(c.created_at)) === t).length,
+      applied: state.applications.filter((a) => a.status === "completed" && a.date_applied === t).length,
     };
   }
 
@@ -546,7 +575,7 @@
   ];
 
   function cheer(a) {
-    const actions = a.emails + a.liMessages + a.otherOut + a.liRequests + a.added;
+    const actions = a.emails + a.liMessages + a.otherOut + a.liRequests + a.added + a.applied;
     const [, lines] = CHEERS.find(([min]) => actions >= min);
     const dayNum = Math.floor(parseISO(todayISO()).getTime() / 86400000);
     let msg = lines[dayNum % lines.length];
@@ -566,6 +595,7 @@
           <p>${esc(cheer(a))}</p>
         </div>
         <div class="today-tiles">
+          ${tile(a.applied, a.applied === 1 ? "Job applied" : "Jobs applied")}
           ${tile(a.emails, a.emails === 1 ? "Email sent" : "Emails sent")}
           ${tile(a.liMessages, a.liMessages === 1 ? "LinkedIn message" : "LinkedIn messages")}
           ${tile(a.otherOut, "Calls, texts &amp; in person")}
@@ -581,16 +611,30 @@
     const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
     // Each summary card opens the Contacts page with the matching filter.
     const stat = (status, body) => `<a class="card stat stat-link" href="#/contacts" data-go-status="${status}">${body}</a>`;
+    const appStat = (stage, body) => `<a class="card stat stat-link" href="#/applications" data-go-stage="${stage}">${body}</a>`;
+    const ap = appStats();
     page.innerHTML = `
       ${takeFlash()}
       <div class="page-head">
         <div><div class="date">${esc(today)}</div><h1>Welcome back, ${esc(state.displayName)}</h1></div>
         <div class="actions">
           <a class="btn" href="#/new">${I.plus(15)} Add Contact</a>
-          <a class="btn" href="#/contacts">${I.users(15)} View Contacts</a>
+          <a class="btn" href="#/new-application">${I.plus(15)} Add Application</a>
         </div>
       </div>
       ${todayCard()}
+      <h2 class="section-title">Applications</h2>
+      <div class="stats">
+        ${appStat("all", `<span class="label">Applied This Week</span><span class="value">${ap.thisWeek}</span>
+          <span class="sub">${ap.total} applications in total</span>`)}
+        ${appStat("inplay", `<span class="label">In Play</span><span class="value">${ap.inPlay}</span>
+          <span class="sub">Applied and not rejected</span>`)}
+        ${appStat("interviewing", `<span class="label">Interviewing</span><span class="value">${ap.interviewing}</span>
+          <span class="sub">${ap.interviewing === 1 ? "Application" : "Applications"} with an interview</span>`)}
+        ${appStat("ghosted", `<span class="label">Ghosted</span><span class="value${ap.ghosted ? " warn" : ""}">${ap.ghosted}</span>
+          <span class="sub">No response in ${GHOST_DAYS}+ days</span>`)}
+      </div>
+      <h2 class="section-title">Networking</h2>
       <div class="stats">
         ${stat("all", `<span class="label">Total Contacts</span><span class="value">${st.total}</span>
           <span class="sub">${st.addedThisWeek ? `+${st.addedThisWeek} added this week` : "None added this week"}</span>`)}
@@ -604,6 +648,10 @@
       </div>`;
     $$("[data-go-status]", page).forEach((a) => a.addEventListener("click", () => {
       state.filters = { q: "", status: a.dataset.goStatus, tag: "" };
+      $("#search").value = "";
+    }));
+    $$("[data-go-stage]", page).forEach((a) => a.addEventListener("click", () => {
+      state.appFilters = { q: "", stage: a.dataset.goStage, track: "" };
       $("#search").value = "";
     }));
   }
@@ -718,6 +766,306 @@
     menu.querySelector("button").focus();
   }
 
+  // ---------- applications ----------
+
+  const trackLabel = (t) => (TRACKS.find(([v]) => v === t) || [, ""])[1];
+
+  // Status is To Start / Completed (as in Notion); the stage shown is derived from the dates.
+  function stageOf(a) {
+    if (a.status !== "completed") return { key: "to_start", label: "To Start", cls: "" };
+    if (a.rejection_date) return { key: "rejected", label: "Rejected", cls: "muted-badge" };
+    const rounds = (a.interview_dates || []).length;
+    if (rounds) return { key: "interviewing", label: rounds > 1 ? `Interviewing · ${rounds} rounds` : "Interviewing", cls: "solid" };
+    const d = a.date_applied ? daysSince(a.date_applied) : 0;
+    if (d >= GHOST_DAYS) return { key: "ghosted", label: `Ghosted · ${d}d`, cls: "warn" };
+    return { key: "applied", label: d ? `Applied · ${d}d` : "Applied today", cls: "yes" };
+  }
+
+  function appStats() {
+    const mondayISO = isoOf(weekStart());
+    const stages = state.applications.map(stageOf);
+    return {
+      total: state.applications.filter((a) => a.status === "completed").length,
+      thisWeek: state.applications.filter((a) => a.status === "completed" && a.date_applied >= mondayISO).length,
+      inPlay: stages.filter((s) => s.key !== "rejected" && s.key !== "to_start").length,
+      interviewing: stages.filter((s) => s.key === "interviewing").length,
+      ghosted: stages.filter((s) => s.key === "ghosted").length,
+    };
+  }
+
+  function filteredApps() {
+    const { q, stage, track } = state.appFilters;
+    const needle = q.trim().toLowerCase();
+    const rows = state.applications.map((a) => ({ a, st: stageOf(a) })).filter(({ a, st }) => {
+      if (stage === "inplay" && (st.key === "rejected" || st.key === "to_start")) return false;
+      if (stage !== "all" && stage !== "inplay" && st.key !== stage) return false;
+      if (track && a.resume_track !== track) return false;
+      if (needle && ![a.position_title, a.company, a.location, a.notes].join(" ").toLowerCase().includes(needle)) return false;
+      return true;
+    });
+    const { key, dir } = state.appSort;
+    const order = { to_start: 0, applied: 1, interviewing: 2, ghosted: 3, rejected: 4 };
+    const val = ({ a, st }) => (key === "stage" ? String(order[st.key]) : key === "resume_track" ? trackLabel(a.resume_track) : a[key] || "");
+    rows.sort((x, y) => {
+      const vx = val(x), vy = val(y);
+      if (!vx && vy) return 1;
+      if (vx && !vy) return -1;
+      return dir * vx.localeCompare(vy, undefined, { sensitivity: "base", numeric: true });
+    });
+    return rows;
+  }
+
+  function exportApplications(list) {
+    const header = ["Position Title", "Company", "Location", "Job Link", "Status", "Stage", "Date Applied",
+      "Interview Dates", "Rejection Date", "Resume Track", "Notes", "Notion Page"];
+    downloadCsv(`applications-${todayISO()}.csv`, header, list.map(({ a, st }) => [
+      a.position_title, a.company, a.location, a.job_url, a.status === "completed" ? "Completed" : "To Start", st.label,
+      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, trackLabel(a.resume_track), a.notes, a.notion_url,
+    ]));
+  }
+
+  function renderApplicationsPage(page) {
+    const f = state.appFilters;
+    page.innerHTML = `
+      ${takeFlash()}
+      <div class="page-head">
+        <div><h1>Applications</h1></div>
+        <div class="actions">
+          <a class="btn primary" href="#/new-application">${I.plus(15)} Add Application</a>
+          <button class="btn" id="app-export" title="Download the applications shown below">${I.download(15)} Export CSV</button>
+        </div>
+      </div>
+      <section class="card table-card" aria-label="Applications">
+        <div class="table-head">
+          <h2>Applications <span id="app-shown-count"></span></h2>
+          <div class="filters">
+            ${APP_FILTERS.map(([v, l]) => `<button class="chip${f.stage === v ? " on" : ""}" data-stage="${v}" aria-pressed="${f.stage === v}">${l}</button>`).join("")}
+            <select class="select" id="track-filter" aria-label="Filter by resume track">${options([["", "All tracks"], ...TRACKS], f.track)}</select>
+          </div>
+        </div>
+        <div id="app-rows"></div>
+      </section>`;
+    $$("[data-stage]", page).forEach((b) => b.addEventListener("click", () => {
+      f.stage = b.dataset.stage;
+      $$("[data-stage]", page).forEach((x) => {
+        x.classList.toggle("on", x === b);
+        x.setAttribute("aria-pressed", String(x === b));
+      });
+      renderAppRows();
+    }));
+    $("#track-filter").addEventListener("change", (e) => { f.track = e.target.value; renderAppRows(); });
+    $("#app-export").addEventListener("click", () => exportApplications(filteredApps()));
+    renderAppRows();
+  }
+
+  function renderAppRows() {
+    const box = $("#app-rows");
+    if (!box) return;
+    const rows = filteredApps();
+    const total = state.applications.length;
+    $("#app-shown-count").textContent = rows.length === total ? String(total) : `${rows.length} of ${total}`;
+    if (!total) {
+      box.innerHTML = `<div class="empty"><p>No applications yet.</p><a class="btn primary" href="#/new-application">${I.plus()} Add your first application</a></div>`;
+      return;
+    }
+    const arrow = (k) => (state.appSort.key === k ? (state.appSort.dir > 0 ? " ↑" : " ↓") : "");
+    const head = (k, l) => `<button data-app-sort="${k}">${l}${arrow(k)}</button>`;
+    const activeId = state.route.id;
+    box.innerHTML = `
+      <div class="grid-row apps head">
+        ${head("position_title", "Position")}${head("company", "Company")}<span class="col-loc">${head("location", "Location")}</span>
+        ${head("date_applied", "Applied")}${head("stage", "Stage")}<span class="col-track">${head("resume_track", "Track")}</span><span></span>
+      </div>
+      ${rows.length ? rows.map(({ a, st }) => `
+        <div class="grid-row apps item${a.id === activeId ? " active" : ""}" data-app-id="${esc(a.id)}">
+          <div class="who-cell"><div class="names"><b>${esc(a.position_title)}</b><span><span class="m-co">${esc([a.company, a.location].filter(Boolean).join(" · "))}</span></span></div></div>
+          <div class="cell col-company">${esc(a.company)}</div>
+          <div class="cell dim col-loc">${esc(a.location)}</div>
+          <div class="cell dim col-date">${a.date_applied ? esc(fmtDate(a.date_applied)) : "—"}</div>
+          <div class="col-stage"><span class="badge ${st.cls}" ${st.key === "rejected" ? `title="Rejected ${esc(fmtDate(a.rejection_date))}"` : ""}>${esc(st.label)}</span></div>
+          <div class="cell dim col-track">${esc(trackLabel(a.resume_track))}</div>
+          <div class="col-menu">${safeUrl(a.job_url) ? `<a class="icon-btn" href="${esc(safeUrl(a.job_url))}" target="_blank" rel="noopener" aria-label="Open job posting for ${esc(a.position_title)}" title="Open job posting">${I.external()}</a>` : ""}</div>
+        </div>`).join("") : `<div class="empty"><p>No applications match these filters.</p></div>`}`;
+    $$("[data-app-sort]", box).forEach((b) => b.addEventListener("click", () => {
+      const k = b.dataset.appSort;
+      state.appSort = { key: k, dir: state.appSort.key === k ? -state.appSort.dir : k === "date_applied" ? -1 : 1 };
+      renderAppRows();
+    }));
+    $$(".grid-row.apps.item", box).forEach((row) => row.addEventListener("click", (e) => {
+      if (e.target.closest("a")) return;
+      location.hash = "#/application/" + row.dataset.appId;
+    }));
+  }
+
+  async function saveApp(el, changes, flash) {
+    const a = state.applications.find((x) => x.id === changes.id);
+    const saved = await run(() => backend.saveApplication({ ...a, ...changes }), el);
+    Object.assign(a, saved);
+    state.flash = flash;
+    state.appAction = null;
+    renderOverlay();
+    renderPage();
+  }
+
+  function renderAppView(el, a) {
+    const st = stageOf(a);
+    const flash = takeFlash();
+    const sub = [a.company, a.location].filter(Boolean).join(" · ");
+    const job = safeUrl(a.job_url);
+    const notion = safeUrl(a.notion_url);
+    const interviews = [...(a.interview_dates || [])].sort();
+    const events = [];
+    if (a.status === "completed" && a.date_applied) events.push({ date: a.date_applied, text: "Applied", kind: "outreach" });
+    interviews.forEach((d, i) => events.push({ date: d, text: `Interview #${i + 1}`, kind: "reply", del: `interview:${i}` }));
+    if (a.rejection_date) events.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin", del: "rejection" });
+    events.sort((x, y) => y.date.localeCompare(x.date));
+    const action = state.appAction;
+    const actionForm = action ? `
+      <form class="log-form" id="app-action-form">
+        <div class="field wide"><label for="aa-date">${action === "interview" ? "Interview date" : action === "reject" ? "Rejection date" : "Date applied"}</label>
+          <input id="aa-date" name="date" type="date" required value="${todayISO()}" autofocus></div>
+        <div class="btns"><button type="button" class="btn ghost" id="aa-cancel">Cancel</button>
+          <button class="btn primary" type="submit">${action === "interview" ? "Add interview" : action === "reject" ? "Mark rejected" : "Mark applied"}</button></div>
+      </form>` : "";
+
+    el.innerHTML = `
+      <div class="panel-head">
+        <span class="avatar lg">${I.briefcase(20)}</span>
+        <div class="title"><h2 id="panel-title">${esc(a.position_title)}</h2>${sub ? `<span>${esc(sub)}</span>` : ""}</div>
+        <a class="icon-btn" href="#/application/${esc(a.id)}/edit" aria-label="Edit application">${I.pencil()}</a>
+        ${closeBtn}
+      </div>
+      <div class="panel-body">
+        ${flash}
+        <div class="cols-2">
+          <div class="status-box"><span class="l">Stage</span><span class="v${st.key === "ghosted" ? " warn" : ""}">${esc(st.label)}</span>
+            <span class="s">${st.key === "rejected" ? "on " + esc(fmtDate(a.rejection_date)) : st.key === "ghosted" ? "No response in " + GHOST_DAYS + "+ days" : st.key === "to_start" ? "Not applied yet" : ""}</span></div>
+          <div class="status-box"><span class="l">Date applied</span><span class="v">${a.date_applied ? esc(fmtDate(a.date_applied)) : "—"}</span>
+            <span class="s">${a.date_applied && a.status === "completed" ? daysSince(a.date_applied) + " days ago" : ""}</span></div>
+        </div>
+        <section class="cols-2">
+          ${kv("Job posting", job ? `<a href="${esc(job)}" target="_blank" rel="noopener">Open posting ↗</a>` : "")}
+          ${kv("Resume track", esc(trackLabel(a.resume_track)))}
+          ${kv("Location", esc(a.location))}
+          ${kv("Notion page", notion ? `<a href="${esc(notion)}" target="_blank" rel="noopener">Open in Notion ↗</a>` : "")}
+        </section>
+        <section class="section"><h3>Notes</h3>
+          ${a.notes ? `<p class="notes-box">${esc(a.notes)}</p>` : `<span class="muted">No notes</span>`}
+        </section>
+        <section class="section"><h3>Timeline</h3>
+          ${actionForm}
+          ${events.length ? `<div class="timeline">${events.map((e) => `
+            <div class="tl-item">
+              <span class="tl-dot ${e.kind}"></span>
+              <div class="what"><b>${esc(e.text)}</b><span>${esc(fmtDate(e.date))}</span></div>
+              ${e.del ? `<button class="icon-btn" data-app-del="${e.del}" aria-label="Remove ${esc(e.text)}" title="Remove">${I.trash()}</button>` : ""}
+            </div>`).join("")}</div>` : `<span class="muted">Nothing yet.</span>`}
+        </section>
+      </div>
+      <div class="panel-foot">
+        ${a.status !== "completed"
+          ? `<button class="btn primary lg grow" data-app-act="applied">${I.check()} Mark as applied</button>`
+          : `<button class="btn primary lg grow" data-app-act="interview">${I.plus()} Log interview</button>
+             ${a.rejection_date ? "" : `<button class="btn lg" data-app-act="reject">Mark rejected</button>`}`}
+        <a class="btn lg" href="#/application/${esc(a.id)}/edit">Edit</a>
+      </div>`;
+
+    $$("[data-app-act]", el).forEach((b) => b.addEventListener("click", () => {
+      state.appAction = b.dataset.appAct === "applied" ? "applied" : b.dataset.appAct;
+      renderAppView(el, a);
+      const d = $("#aa-date", el);
+      if (d) d.focus();
+    }));
+    const form = $("#app-action-form", el);
+    if (form) {
+      $("#aa-cancel", el).addEventListener("click", () => { state.appAction = null; renderAppView(el, a); });
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const date = form.date.value;
+        if (action === "interview") saveApp(el, { id: a.id, interview_dates: [...(a.interview_dates || []), date].sort() }, "Interview added.");
+        else if (action === "reject") saveApp(el, { id: a.id, rejection_date: date }, "Marked as rejected.");
+        else saveApp(el, { id: a.id, status: "completed", date_applied: date }, "Marked as applied.");
+      });
+    }
+    $$("[data-app-del]", el).forEach((b) => b.addEventListener("click", () => {
+      const what = b.dataset.appDel;
+      if (!confirm(what === "rejection" ? "Remove the rejection? The application goes back in play." : "Remove this interview?")) return;
+      if (what === "rejection") saveApp(el, { id: a.id, rejection_date: null }, "Rejection removed.");
+      else {
+        const i = Number(what.split(":")[1]);
+        saveApp(el, { id: a.id, interview_dates: interviews.filter((_, j) => j !== i) }, "Interview removed.");
+      }
+    }));
+  }
+
+  function renderAppForm(el, existing) {
+    const a = existing || { status: "completed", date_applied: todayISO(), interview_dates: [] };
+    const text = (name, label, type = "text", extra = "") =>
+      `<div class="field"><label for="a-${name}">${label}</label><input id="a-${name}" name="${name}" type="${type}" value="${esc(a[name])}"${extra}></div>`;
+    el.innerHTML = `
+      <div class="panel-head">
+        <div class="title"><h2 id="panel-title">${existing ? "Edit application" : "New application"}</h2>${existing ? `<span>${esc(a.position_title)}</span>` : ""}</div>
+        ${existing ? `<a class="icon-btn" href="#/application/${esc(a.id)}" aria-label="Cancel editing">${I.close()}</a>` : closeBtn}
+      </div>
+      <form class="panel-body" id="app-form" autocomplete="off" novalidate>
+        <section class="section"><h3>Job</h3>
+          ${text("position_title", "Position title *", "text", " required autofocus")}
+          <div class="cols-2">${text("company", "Company")}${text("location", "Location")}</div>
+          ${text("job_url", "Job posting link", "url", ' placeholder="https://…"')}
+          <p class="error" id="title-err" hidden>Position title is required.</p>
+        </section>
+        <section class="section"><h3>Status</h3>
+          <div class="cols-2">
+            <div class="field"><label for="a-status">Status</label>
+              <select id="a-status" name="status">${options([["to_start", "To Start"], ["completed", "Completed (applied)"]], a.status)}</select></div>
+            ${text("date_applied", "Date applied", "date")}
+            <div class="field"><label for="a-resume_track">Resume track</label>
+              <select id="a-resume_track" name="resume_track">${options([["", "—"], ...TRACKS], a.resume_track || "")}</select></div>
+            ${text("rejection_date", "Rejection date", "date")}
+          </div>
+          <span class="muted" style="font-size:12px">Interviews are added from the application's page with "Log interview".</span>
+        </section>
+        <section class="section"><h3>Notes</h3>
+          <div class="field"><label for="a-notes" class="sr-only">Notes</label><textarea id="a-notes" name="notes">${esc(a.notes)}</textarea></div>
+        </section>
+      </form>
+      <div class="panel-foot">
+        <button class="btn primary lg grow" type="submit" form="app-form">${existing ? "Save changes" : "Save application"}</button>
+        ${existing ? `<button class="btn lg danger" type="button" id="delete-app">${I.trash()} Delete</button>` : `<button class="btn lg" type="button" data-close>Cancel</button>`}
+      </div>`;
+
+    const form = $("#app-form", el);
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!form.position_title.value.trim()) {
+        $("#title-err", el).hidden = false;
+        form.position_title.focus();
+        return;
+      }
+      const fd = new FormData(form);
+      const data = { id: existing ? existing.id : undefined, interview_dates: a.interview_dates || [] };
+      for (const [k, v] of fd.entries()) data[k] = typeof v === "string" ? v.trim() : v;
+      data.resume_track = data.resume_track || null;
+      data.date_applied = data.date_applied || (data.status === "completed" ? todayISO() : null);
+      data.rejection_date = data.rejection_date || null;
+      if (data.job_url) data.job_url = safeUrl(data.job_url) || data.job_url;
+      const saved = await run(() => backend.saveApplication(data), el);
+      if (existing) Object.assign(existing, saved);
+      else state.applications.push(saved);
+      state.flash = existing ? "Saved." : "Application saved.";
+      location.hash = "#/application/" + saved.id;
+    });
+    if (existing) {
+      $("#delete-app", el).addEventListener("click", async () => {
+        if (!confirm(`Delete the ${existing.position_title} application? This can't be undone.`)) return;
+        await run(() => backend.deleteApplication(existing.id), el);
+        state.applications = state.applications.filter((x) => x.id !== existing.id);
+        state.flash = "Application deleted.";
+        location.hash = baseHash();
+      });
+    }
+  }
+
   function renderTagsPage(page) {
     const tags = allTags();
     const untagged = state.contacts.filter((c) => !(c.tags || []).length).length;
@@ -745,9 +1093,14 @@
         <div><h2>Full outreach history</h2><p>One row for every outreach and reply you've logged, with the date, method and note.</p></div>
         <button class="btn" id="ex-history"${state.interactions.length ? "" : " disabled"}>${I.download(15)} Download history (${state.interactions.length})</button>
       </div>
-      <p class="muted">To export only some contacts, filter the Contacts list and use its Export CSV button.</p>`;
+      <div class="card option-card">
+        <div><h2>Applications spreadsheet</h2><p>One row per application: position, company, location, link, stage, dates applied / interviewed / rejected, resume track, notes.</p></div>
+        <button class="btn" id="ex-apps"${state.applications.length ? "" : " disabled"}>${I.download(15)} Download applications (${state.applications.length})</button>
+      </div>
+      <p class="muted">To export only some, filter the Contacts or Applications list and use its Export CSV button.</p>`;
     $("#ex-contacts").addEventListener("click", () => exportContacts(everyone()));
     $("#ex-history").addEventListener("click", () => exportHistory(everyone()));
+    $("#ex-apps").addEventListener("click", () => exportApplications(state.applications.map((a) => ({ a, st: stageOf(a) }))));
   }
 
   function renderSettingsPage(page) {
@@ -895,19 +1248,22 @@
       document.body.style.overflow = "";
       return;
     }
-    const contact = id ? state.contacts.find((c) => c.id === id) : null;
-    if (id && !contact) {
+    const isApp = panel === "app-view" || panel === "app-edit";
+    const record = id ? (isApp ? state.applications : state.contacts).find((c) => c.id === id) : null;
+    if (id && !record) {
       box.innerHTML = "";
-      state.flash = "That contact wasn't found.";
+      state.flash = isApp ? "That application wasn't found." : "That contact wasn't found.";
       location.hash = baseHash();
       return;
     }
     document.body.style.overflow = "hidden";
     box.innerHTML = `<div class="backdrop" data-close></div><aside class="panel" role="dialog" aria-modal="true" aria-labelledby="panel-title"></aside>`;
     const el = $(".panel", box);
-    if (panel === "view") renderContactView(el, contact);
-    else if (panel === "edit") renderContactForm(el, contact);
+    if (panel === "view") renderContactView(el, record);
+    else if (panel === "edit") renderContactForm(el, record);
     else if (panel === "import") renderImport(el);
+    else if (panel === "app-view") renderAppView(el, record);
+    else if (panel === "app-edit") renderAppForm(el, record);
     $$("[data-close]", box).forEach((b) => b.addEventListener("click", closePanel));
     const focusable = $("[autofocus]", el) || $(".panel-head .icon-btn:last-child", el);
     if (focusable) focusable.focus();
@@ -1300,20 +1656,26 @@
   function parseRoute() {
     const h = (location.hash || "#/").slice(1);
     let m;
-    // Side panels open over whichever of Dashboard / Contacts you were on.
-    const under = state.route && state.route.page === "dashboard" ? "dashboard" : "contacts";
+    // Side panels open over the page you were on (Dashboard, or the matching list).
+    const cur = state.route && state.route.page;
+    const under = cur === "dashboard" ? "dashboard" : "contacts";
+    const appUnder = cur === "dashboard" ? "dashboard" : "applications";
     if ((m = h.match(/^\/contact\/([^/]+)\/edit$/))) return { page: under, panel: "edit", id: decodeURIComponent(m[1]) };
     if ((m = h.match(/^\/contact\/([^/]+)$/))) return { page: under, panel: "view", id: decodeURIComponent(m[1]) };
     if (h === "/new") return { page: under, panel: "edit" };
     if (h === "/import") return { page: under, panel: "import" };
+    if ((m = h.match(/^\/application\/([^/]+)\/edit$/))) return { page: appUnder, panel: "app-edit", id: decodeURIComponent(m[1]) };
+    if ((m = h.match(/^\/application\/([^/]+)$/))) return { page: appUnder, panel: "app-view", id: decodeURIComponent(m[1]) };
+    if (h === "/new-application") return { page: appUnder, panel: "app-edit" };
     if (h === "/contacts") return { page: "contacts" };
+    if (h === "/applications") return { page: "applications" };
     if (h === "/tags") return { page: "tags" };
     if (h === "/export") return { page: "export" };
     if (h === "/settings") return { page: "settings" };
     return { page: "dashboard" };
   }
 
-  const baseHash = () => (state.route.page === "dashboard" ? "#/" : "#/contacts");
+  const baseHash = () => ({ dashboard: "#/", applications: "#/applications" })[state.route.page] || "#/contacts";
 
   function route() {
     const prev = state.route;
@@ -1321,9 +1683,10 @@
     closeRowMenu();
     if (prev.panel === "import" && state.route.panel !== "import") state.importPlan = null;
     if (state.route.panel !== "view") state.logOpen = state.route.panel === "view" && state.logOpen;
+    if (prev.panel !== state.route.panel || prev.id !== state.route.id) state.appAction = null;
     // Re-render the page underneath only when it changed or the panel closed (data may have changed).
-    if (prev.page !== state.route.page || !state.route.panel || !$("#rows")) renderPage();
-    else renderRows();
+    if (prev.page !== state.route.page || !state.route.panel || !($("#rows") || $("#app-rows"))) renderPage();
+    else { renderRows(); renderAppRows(); }
     renderOverlay();
   }
 

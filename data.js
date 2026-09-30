@@ -10,6 +10,10 @@
     "notes", "tags",
   ];
   const INTERACTION_FIELDS = ["contact_id", "kind", "method", "happened_on", "note"];
+  const APPLICATION_FIELDS = [
+    "position_title", "company", "location", "job_url", "status", "date_applied", "rejection_date",
+    "interview_dates", "resume_track", "notes", "notion_url",
+  ];
 
   function pick(obj, fields) {
     const out = {};
@@ -60,11 +64,20 @@
             if (page.length < 1000) return out;
           }
         };
-        const [contacts, interactions] = await Promise.all([
+        const [contacts, interactions, applications] = await Promise.all([
           fetchAll("contacts", "created_at"),
           fetchAll("interactions", "happened_on"),
+          fetchAll("applications", "created_at"),
         ]);
-        return { contacts, interactions };
+        return { contacts, interactions, applications };
+      },
+      async saveApplication(a) {
+        const row = pick(a, APPLICATION_FIELDS);
+        if (a.id) return check(await sb.from("applications").update(row).eq("id", a.id).select().single());
+        return check(await sb.from("applications").insert(row).select().single());
+      },
+      async deleteApplication(id) {
+        check(await sb.from("applications").delete().eq("id", id));
       },
       async importContacts(items) {
         // items: [{ contact, interactions: [...] }]
@@ -105,7 +118,7 @@
     function load() {
       try {
         const saved = JSON.parse(localStorage.getItem(KEY));
-        if (saved && saved.contacts) return saved;
+        if (saved && saved.contacts) return { applications: sampleData().applications, ...saved };
       } catch (e) { /* fall through to sample data */ }
       return sampleData();
     }
@@ -138,6 +151,20 @@
           { id: uid(), contact_id: a, kind: "reply", method: "Email", happened_on: "2026-09-12", note: "Happy to chat next week", created_at: now() },
           { id: uid(), contact_id: b, kind: "outreach", method: "Email", happened_on: "2026-09-15", note: "", created_at: now() },
         ],
+        applications: [
+          { id: uid(), position_title: "Associate Product Manager", company: "Acme Corp", location: "Seattle, WA",
+            job_url: "https://jobs.example.com/apm", status: "completed", date_applied: "2026-09-02", rejection_date: null,
+            interview_dates: ["2026-09-18", "2026-09-25"], resume_track: "product", notes: "Referred by Priya.", notion_url: null, created_at: now() },
+          { id: uid(), position_title: "Creative Operations Coordinator", company: "Globex", location: "Remote",
+            job_url: "", status: "completed", date_applied: "2026-06-20", rejection_date: null,
+            interview_dates: [], resume_track: "ea_creative_ops", notes: "", notion_url: null, created_at: now() },
+          { id: uid(), position_title: "Content Operations Specialist", company: "Initech", location: "New York, NY",
+            job_url: "", status: "completed", date_applied: "2026-09-05", rejection_date: "2026-09-20",
+            interview_dates: [], resume_track: "content_media_ops", notes: "", notion_url: null, created_at: now() },
+          { id: uid(), position_title: "Product Analyst", company: "Umbrella", location: "Los Angeles, CA",
+            job_url: "", status: "to_start", date_applied: null, rejection_date: null,
+            interview_dates: [], resume_track: null, notes: "", notion_url: null, created_at: now() },
+        ],
       };
     }
 
@@ -152,7 +179,26 @@
       async getSyncStatus() { return null; },
       async registerSyncToken() { throw new Error("Gmail sync isn't available in demo mode."); },
       async disconnectSync() {},
-      async loadAll() { return JSON.parse(JSON.stringify({ contacts: state.contacts, interactions: state.interactions })); },
+      async loadAll() {
+        return JSON.parse(JSON.stringify({ contacts: state.contacts, interactions: state.interactions, applications: state.applications }));
+      },
+      async saveApplication(a) {
+        const row = pick(a, APPLICATION_FIELDS);
+        if (a.id) {
+          const existing = state.applications.find((x) => x.id === a.id);
+          Object.assign(existing, row, { updated_at: now() });
+          persist();
+          return { ...existing };
+        }
+        const created = { interview_dates: [], ...row, id: uid(), created_at: now(), updated_at: now() };
+        state.applications.push(created);
+        persist();
+        return { ...created };
+      },
+      async deleteApplication(id) {
+        state.applications = state.applications.filter((x) => x.id !== id);
+        persist();
+      },
       async importContacts(items) {
         const out = { contacts: [], interactions: [] };
         for (const it of items) {
