@@ -13,7 +13,9 @@
   const APPLICATION_FIELDS = [
     "position_title", "company", "location", "job_url", "status", "date_applied", "rejection_date",
     "interview_dates", "resume_track", "notes", "resume_text", "cover_letter", "application_answers",
+    "questions", "resume_tailored", "resume_file_path", "resume_file_name",
   ];
+  const safeFileName = (name) => name.replace(/[^\w.\-]+/g, "_").slice(-120);
 
   function pick(obj, fields) {
     const out = {};
@@ -80,6 +82,19 @@
       async deleteApplication(id) {
         check(await sb.from("applications").delete().eq("id", id));
       },
+      // Tailored resume files live in the private "documents" bucket, under the user's own folder.
+      async uploadFile(appId, file) {
+        const { data } = await sb.auth.getUser();
+        const path = `${data.user.id}/${appId}/${Date.now()}-${safeFileName(file.name)}`;
+        check(await sb.storage.from("documents").upload(path, file, { contentType: file.type || undefined }));
+        return path;
+      },
+      async fileUrl(path) {
+        return check(await sb.storage.from("documents").createSignedUrl(path, 300)).signedUrl;
+      },
+      async removeFile(path) {
+        check(await sb.storage.from("documents").remove([path]));
+      },
       async importContacts(items) {
         // items: [{ contact, interactions: [...] }]
         const created = [];
@@ -124,6 +139,7 @@
       return sampleData();
     }
     let state = load();
+    const demoFiles = {};
     function persist() {
       try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* demo only */ }
     }
@@ -200,6 +216,17 @@
         state.applications = state.applications.filter((x) => x.id !== id);
         persist();
       },
+      // Demo mode keeps files in memory for this visit only.
+      async uploadFile(appId, file) {
+        const path = `demo/${appId}/${safeFileName(file.name)}`;
+        demoFiles[path] = URL.createObjectURL(file);
+        return path;
+      },
+      async fileUrl(path) {
+        if (!demoFiles[path]) throw new Error("Files uploaded in demo mode only last until the page reloads.");
+        return demoFiles[path];
+      },
+      async removeFile(path) { delete demoFiles[path]; },
       async importContacts(items) {
         const out = { contacts: [], interactions: [] };
         for (const it of items) {

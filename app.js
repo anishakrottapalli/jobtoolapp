@@ -768,9 +768,14 @@
 
   // ---------- applications ----------
 
-  // Text submitted with an application.
-  const APP_DOCS = [["resume_text", "Resume"], ["cover_letter", "Cover letter"], ["application_answers", "Application answers"]];
   const trackLabel = (t) => (TRACKS.find(([v]) => v === t) || [, ""])[1];
+  const wordCount = (s) => (s || "").trim().split(/\s+/).filter(Boolean).length;
+  // Question/answer pairs. Older records kept all answers in one text field; show that as a single answer.
+  function questionsOf(a) {
+    if (Array.isArray(a.questions) && a.questions.length) return a.questions;
+    return a.application_answers ? [{ q: "", a: a.application_answers }] : [];
+  }
+  const questionsText = (a) => questionsOf(a).map((x) => (x.q ? `Q: ${x.q}\nA: ${x.a}` : x.a)).join("\n\n");
 
   // Status is To Start / Completed; the stage shown is derived from the dates.
   function stageOf(a) {
@@ -803,7 +808,7 @@
       if (stage === "inplay" && (st.key === "rejected" || st.key === "to_start")) return false;
       if (stage !== "all" && stage !== "inplay" && st.key !== stage) return false;
       if (track && a.resume_track !== track) return false;
-      if (needle && ![a.position_title, a.company, a.location, a.notes, a.resume_text, a.cover_letter, a.application_answers].join(" ").toLowerCase().includes(needle)) return false;
+      if (needle && ![a.position_title, a.company, a.location, a.notes, a.resume_text, a.cover_letter, questionsText(a)].join(" ").toLowerCase().includes(needle)) return false;
       return true;
     });
     const { key, dir } = state.appSort;
@@ -820,10 +825,11 @@
 
   function exportApplications(list) {
     const header = ["Position Title", "Company", "Location", "Job Link", "Status", "Stage", "Date Applied",
-      "Interview Dates", "Rejection Date", "Resume Track", "Notes", "Resume", "Cover Letter", "Application Answers"];
+      "Interview Dates", "Rejection Date", "Resume Track", "Resume Type", "Resume File", "Notes", "Resume", "Cover Letter", "Questions"];
     downloadCsv(`applications-${todayISO()}.csv`, header, list.map(({ a, st }) => [
       a.position_title, a.company, a.location, a.job_url, a.status === "completed" ? "Completed" : "To Start", st.label,
-      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, trackLabel(a.resume_track), a.notes, a.resume_text, a.cover_letter, a.application_answers,
+      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, trackLabel(a.resume_track),
+      a.resume_tailored ? "Tailored" : "General", a.resume_file_name, a.notes, a.resume_text, a.cover_letter, questionsText(a),
     ]));
   }
 
@@ -921,6 +927,10 @@
     interviews.forEach((d, i) => events.push({ date: d, text: `Interview #${i + 1}`, kind: "reply", del: `interview:${i}` }));
     if (a.rejection_date) events.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin", del: "rejection" });
     events.sort((x, y) => y.date.localeCompare(x.date));
+    const qs = questionsOf(a);
+    const docBlock = (text, key, label) => `<p class="notes-box doc-full">${esc(text)}</p>
+      <div class="doc-actions"><button class="btn" type="button" data-copy-doc="${esc(key)}">${I.check(13)} Copy ${label}</button>
+        <span class="muted small">${wordCount(text)} words</span></div>`;
     const action = state.appAction;
     const actionForm = action ? `
       <form class="log-form" id="app-action-form">
@@ -953,13 +963,24 @@
         <section class="section"><h3>Notes</h3>
           ${a.notes ? `<p class="notes-box">${esc(a.notes)}</p>` : `<span class="muted">No notes</span>`}
         </section>
-        ${APP_DOCS.map(([k, label]) => `
-        <section class="section"><h3>${label}</h3>
-          ${a[k] ? `<p class="notes-box doc-full">${esc(a[k])}</p>
-            <div class="doc-actions"><button class="btn" type="button" data-copy-doc="${k}">${I.check(13)} Copy ${label.toLowerCase()}</button>
-              <span class="muted small">${a[k].trim().split(/\s+/).length} words</span></div>`
-          : `<span class="muted">None added</span>`}
-        </section>`).join("")}
+        <section class="section"><h3>Resume</h3>
+          <div class="doc-actions"><span class="badge ${a.resume_tailored ? "solid" : ""}">${a.resume_tailored ? "Tailored for this job" : "General resume"}</span></div>
+          ${a.resume_file_path ? `<div class="file-row">${I.download(15)}<span class="file-name">${esc(a.resume_file_name || "Resume file")}</span>
+              <button class="btn" type="button" id="open-resume">Open</button></div>`
+            : a.resume_tailored ? `<span class="muted">No file uploaded yet. <a href="#/application/${esc(a.id)}/edit">Upload it</a></span>` : ""}
+          ${a.resume_text ? docBlock(a.resume_text, "resume_text", "resume text") : ""}
+        </section>
+        <section class="section"><h3>Cover letter</h3>
+          ${a.cover_letter ? docBlock(a.cover_letter, "cover_letter", "cover letter") : `<span class="muted">None added</span>`}
+        </section>
+        <section class="section"><h3>Questions${qs.length ? ` <span class="muted small">${qs.length}</span>` : ""}</h3>
+          ${qs.length ? qs.map((x, i) => `
+            <div class="qa">
+              ${x.q ? `<p class="qa-q">${esc(x.q)}</p>` : ""}
+              ${docBlock(x.a, "qa:" + i, "answer")}
+            </div>`).join("")
+          : `<span class="muted">No questions added. <a href="#/application/${esc(a.id)}/edit">Add questions</a></span>`}
+        </section>
         <section class="section"><h3>Timeline</h3>
           ${actionForm}
           ${events.length ? `<div class="timeline">${events.map((e) => `
@@ -978,8 +999,21 @@
         <a class="btn lg" href="#/application/${esc(a.id)}/edit">Edit</a>
       </div>`;
 
+    const openBtn = $("#open-resume", el);
+    if (openBtn) openBtn.addEventListener("click", async () => {
+      // Open the tab right away so the browser doesn't block it, then point it at the file.
+      const win = window.open("", "_blank");
+      try {
+        const url = await backend.fileUrl(a.resume_file_path);
+        if (win) win.location = url; else location.href = url;
+      } catch (err) {
+        if (win) win.close();
+        alert("Couldn't open the file: " + err.message);
+      }
+    });
     $$("[data-copy-doc]", el).forEach((b) => b.addEventListener("click", async () => {
-      const text = a[b.dataset.copyDoc] || "";
+      const key = b.dataset.copyDoc;
+      const text = key.startsWith("qa:") ? qs[Number(key.slice(3))].a : a[key] || "";
       try { await navigator.clipboard.writeText(text); } catch (e) { /* clipboard blocked */ }
       const label = b.innerHTML;
       b.textContent = "Copied ✓";
@@ -1034,8 +1068,6 @@
             <div class="field"><label for="a-status">Status</label>
               <select id="a-status" name="status">${options([["to_start", "To Start"], ["completed", "Completed (applied)"]], a.status)}</select></div>
             ${text("date_applied", "Date applied", "date")}
-            <div class="field"><label for="a-resume_track">Resume track</label>
-              <select id="a-resume_track" name="resume_track">${options([["", "—"], ...TRACKS], a.resume_track || "")}</select></div>
             ${text("rejection_date", "Rejection date", "date")}
           </div>
           <span class="muted" style="font-size:12px">Interviews are added from the application's page with "Log interview".</span>
@@ -1043,9 +1075,31 @@
         <section class="section"><h3>Notes</h3>
           <div class="field"><label for="a-notes" class="sr-only">Notes</label><textarea id="a-notes" name="notes">${esc(a.notes)}</textarea></div>
         </section>
-        <section class="section"><h3>What you submitted</h3>
-          ${APP_DOCS.map(([k, label]) => `<div class="field"><label for="a-${k}">${label}</label>
-            <textarea id="a-${k}" name="${k}" class="autogrow" rows="6" placeholder="Paste the ${label.toLowerCase()} you used">${esc(a[k])}</textarea></div>`).join("")}
+        <section class="section"><h3>Resume</h3>
+          <fieldset class="field choice-field"><legend>Which resume did you send?</legend>
+            <div class="choice">
+              <label><input type="radio" name="resume_kind" value="general"${a.resume_tailored ? "" : " checked"}> General</label>
+              <label><input type="radio" name="resume_kind" value="tailored"${a.resume_tailored ? " checked" : ""}> Tailored for this job</label>
+            </div></fieldset>
+          <div class="field"><label for="a-resume_track">Resume track</label>
+            <select id="a-resume_track" name="resume_track">${options([["", "—"], ...TRACKS], a.resume_track || "")}</select></div>
+          <div id="tailored-box"${a.resume_tailored ? "" : " hidden"}>
+            <div class="field"><label for="a-resume_file">Tailored resume file (PDF or Word)</label>
+              <div class="file-row" id="current-file"${a.resume_file_path ? "" : " hidden"}>${I.download(15)}<span class="file-name">${esc(a.resume_file_name || "")}</span>
+                <button type="button" class="btn ghost" id="remove-file">Remove</button></div>
+              <input id="a-resume_file" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+              <span class="muted small" id="file-hint">${a.resume_file_path ? "Choose a new file to replace it." : ""}</span></div>
+          </div>
+          <div class="field"><label for="a-resume_text">Resume text (optional)</label>
+            <textarea id="a-resume_text" name="resume_text" class="autogrow" rows="3" placeholder="Paste the resume text if you want it searchable">${esc(a.resume_text)}</textarea></div>
+        </section>
+        <section class="section"><h3>Cover letter</h3>
+          <div class="field"><label for="a-cover_letter" class="sr-only">Cover letter</label>
+            <textarea id="a-cover_letter" name="cover_letter" class="autogrow" rows="6" placeholder="Paste the cover letter you used">${esc(a.cover_letter)}</textarea></div>
+        </section>
+        <section class="section"><h3>Questions</h3>
+          <div id="qa-list"></div>
+          <button type="button" class="btn" id="add-qa">${I.plus(15)} Add question</button>
         </section>
       </form>
       <div class="panel-foot">
@@ -1055,11 +1109,43 @@
 
     const form = $("#app-form", el);
     // Long text boxes grow to fit everything pasted into them.
-    $$("textarea.autogrow", el).forEach((ta) => {
+    const autogrow = (ta) => {
       const fit = () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + 2 + "px"; };
       ta.addEventListener("input", fit);
       requestAnimationFrame(fit);
+    };
+    $$("textarea.autogrow", el).forEach(autogrow);
+
+    // Resume: general vs tailored, with an optional uploaded file.
+    let removeFile = false;
+    $$('input[name="resume_kind"]', el).forEach((r) => r.addEventListener("change", () => {
+      $("#tailored-box", el).hidden = form.resume_kind.value !== "tailored";
+    }));
+    $("#remove-file", el).addEventListener("click", () => {
+      removeFile = true;
+      $("#current-file", el).hidden = true;
+      $("#file-hint", el).textContent = "The file will be removed when you save.";
     });
+
+    // Questions: any number of question/answer pairs.
+    let qaSeq = 0;
+    const addQa = (x = { q: "", a: "" }, focus = false) => {
+      const n = ++qaSeq;
+      const row = document.createElement("div");
+      row.className = "qa-edit";
+      row.innerHTML = `
+        <div class="field"><label for="qa-q-${n}">Question</label>
+          <input id="qa-q-${n}" class="qa-q" type="text" value="${esc(x.q)}" placeholder="e.g. Why do you want to work here?"></div>
+        <div class="field"><label for="qa-a-${n}">Answer</label>
+          <textarea id="qa-a-${n}" class="qa-a autogrow" rows="4">${esc(x.a)}</textarea></div>
+        <button type="button" class="btn ghost" data-remove-qa>${I.trash(14)} Remove question</button>`;
+      $("#qa-list", el).appendChild(row);
+      autogrow($(".qa-a", row));
+      $("[data-remove-qa]", row).addEventListener("click", () => row.remove());
+      if (focus) $(".qa-q", row).focus();
+    };
+    questionsOf(a).forEach((x) => addQa(x));
+    $("#add-qa", el).addEventListener("click", () => addQa(undefined, true));
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       if (!form.position_title.value.trim()) {
@@ -1070,11 +1156,27 @@
       const fd = new FormData(form);
       const data = { id: existing ? existing.id : undefined, interview_dates: a.interview_dates || [] };
       for (const [k, v] of fd.entries()) data[k] = typeof v === "string" ? v.trim() : v;
+      data.resume_tailored = data.resume_kind === "tailored";
+      delete data.resume_kind;
       data.resume_track = data.resume_track || null;
       data.date_applied = data.date_applied || (data.status === "completed" ? todayISO() : null);
       data.rejection_date = data.rejection_date || null;
       if (data.job_url) data.job_url = safeUrl(data.job_url) || data.job_url;
-      const saved = await run(() => backend.saveApplication(data), el);
+      data.questions = $$(".qa-edit", el)
+        .map((row) => ({ q: $(".qa-q", row).value.trim(), a: $(".qa-a", row).value.trim() }))
+        .filter((x) => x.q || x.a);
+      data.application_answers = null; // now kept as question/answer pairs
+      const file = data.resume_tailored ? $("#a-resume_file", el).files[0] : null;
+      const oldPath = existing && existing.resume_file_path;
+      const saved = await run(async () => {
+        let row = await backend.saveApplication(data);
+        if (file || (removeFile && oldPath)) {
+          const path = file ? await backend.uploadFile(row.id, file) : null;
+          row = await backend.saveApplication({ ...row, resume_file_path: path, resume_file_name: file ? file.name : null });
+          if (oldPath) await backend.removeFile(oldPath).catch(() => {});
+        }
+        return row;
+      }, el);
       if (existing) Object.assign(existing, saved);
       else state.applications.push(saved);
       state.flash = existing ? "Saved." : "Application saved.";
