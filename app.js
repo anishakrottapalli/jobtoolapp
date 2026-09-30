@@ -769,6 +769,10 @@
   // ---------- applications ----------
 
   const trackLabel = (t) => (TRACKS.find(([v]) => v === t) || [, ""])[1];
+  // Which resume was sent: one of the general tracks, or one tailored for this job.
+  const resumeChoice = (a) => (a.resume_tailored ? "tailored" : a.resume_track || "");
+  const RESUME_CHOICES = [...TRACKS, ["tailored", "Tailored for this job"]];
+  const resumeLabel = (a) => (a.resume_tailored ? "Tailored" : trackLabel(a.resume_track));
   const wordCount = (s) => (s || "").trim().split(/\s+/).filter(Boolean).length;
   // Question/answer pairs. Older records kept all answers in one text field; show that as a single answer.
   function questionsOf(a) {
@@ -807,13 +811,13 @@
     const rows = state.applications.map((a) => ({ a, st: stageOf(a) })).filter(({ a, st }) => {
       if (stage === "inplay" && (st.key === "rejected" || st.key === "to_start")) return false;
       if (stage !== "all" && stage !== "inplay" && st.key !== stage) return false;
-      if (track && a.resume_track !== track) return false;
+      if (track && resumeChoice(a) !== track) return false;
       if (needle && ![a.position_title, a.company, a.location, a.notes, a.resume_text, a.cover_letter, questionsText(a)].join(" ").toLowerCase().includes(needle)) return false;
       return true;
     });
     const { key, dir } = state.appSort;
     const order = { to_start: 0, applied: 1, interviewing: 2, ghosted: 3, rejected: 4 };
-    const val = ({ a, st }) => (key === "stage" ? String(order[st.key]) : key === "resume_track" ? trackLabel(a.resume_track) : a[key] || "");
+    const val = ({ a, st }) => (key === "stage" ? String(order[st.key]) : key === "resume" ? resumeLabel(a) : a[key] || "");
     rows.sort((x, y) => {
       const vx = val(x), vy = val(y);
       if (!vx && vy) return 1;
@@ -825,11 +829,10 @@
 
   function exportApplications(list) {
     const header = ["Position Title", "Company", "Location", "Job Link", "Status", "Stage", "Date Applied",
-      "Interview Dates", "Rejection Date", "Resume Track", "Resume Type", "Resume File", "Notes", "Resume", "Cover Letter", "Questions"];
+      "Interview Dates", "Rejection Date", "Resume", "Resume File", "Notes", "Resume", "Cover Letter", "Questions"];
     downloadCsv(`applications-${todayISO()}.csv`, header, list.map(({ a, st }) => [
       a.position_title, a.company, a.location, a.job_url, a.status === "completed" ? "Completed" : "To Start", st.label,
-      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, trackLabel(a.resume_track),
-      a.resume_tailored ? "Tailored" : "General", a.resume_file_name, a.notes, a.resume_text, a.cover_letter, questionsText(a),
+      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, resumeLabel(a), a.resume_file_name, a.notes, a.resume_text, a.cover_letter, questionsText(a),
     ]));
   }
 
@@ -849,7 +852,7 @@
           <h2>Applications <span id="app-shown-count"></span></h2>
           <div class="filters">
             ${APP_FILTERS.map(([v, l]) => `<button class="chip${f.stage === v ? " on" : ""}" data-stage="${v}" aria-pressed="${f.stage === v}">${l}</button>`).join("")}
-            <select class="select" id="track-filter" aria-label="Filter by resume track">${options([["", "All tracks"], ...TRACKS], f.track)}</select>
+            <select class="select" id="track-filter" aria-label="Filter by resume">${options([["", "All resumes"], ...TRACKS, ["tailored", "Tailored"]], f.track)}</select>
           </div>
         </div>
         <div id="app-rows"></div>
@@ -883,7 +886,7 @@
     box.innerHTML = `
       <div class="grid-row apps head">
         ${head("position_title", "Position")}${head("company", "Company")}<span class="col-loc">${head("location", "Location")}</span>
-        ${head("date_applied", "Applied")}${head("stage", "Stage")}<span class="col-track">${head("resume_track", "Track")}</span><span></span>
+        ${head("date_applied", "Applied")}${head("stage", "Stage")}<span class="col-track">${head("resume", "Resume")}</span><span></span>
       </div>
       ${rows.length ? rows.map(({ a, st }) => `
         <div class="grid-row apps item${a.id === activeId ? " active" : ""}" data-app-id="${esc(a.id)}">
@@ -892,7 +895,7 @@
           <div class="cell dim col-loc">${esc(a.location)}</div>
           <div class="cell dim col-date">${a.date_applied ? esc(fmtDate(a.date_applied)) : "—"}</div>
           <div class="col-stage"><span class="badge ${st.cls}" ${st.key === "rejected" ? `title="Rejected ${esc(fmtDate(a.rejection_date))}"` : ""}>${esc(st.label)}</span></div>
-          <div class="cell dim col-track">${esc(trackLabel(a.resume_track))}</div>
+          <div class="cell dim col-track">${esc(resumeLabel(a))}</div>
           <div class="col-menu">${safeUrl(a.job_url) ? `<a class="icon-btn" href="${esc(safeUrl(a.job_url))}" target="_blank" rel="noopener" aria-label="Open job posting for ${esc(a.position_title)}" title="Open job posting">${I.external()}</a>` : ""}</div>
         </div>`).join("") : `<div class="empty"><p>No applications match these filters.</p></div>`}`;
     $$("[data-app-sort]", box).forEach((b) => b.addEventListener("click", () => {
@@ -957,14 +960,14 @@
         </div>
         <section class="cols-2">
           ${kv("Job posting", job ? `<a href="${esc(job)}" target="_blank" rel="noopener">Open posting ↗</a>` : "")}
-          ${kv("Resume track", esc(trackLabel(a.resume_track)))}
           ${kv("Location", esc(a.location))}
         </section>
         <section class="section"><h3>Notes</h3>
           ${a.notes ? `<p class="notes-box">${esc(a.notes)}</p>` : `<span class="muted">No notes</span>`}
         </section>
         <section class="section"><h3>Resume</h3>
-          <div class="doc-actions"><span class="badge ${a.resume_tailored ? "solid" : ""}">${a.resume_tailored ? "Tailored for this job" : "General resume"}</span></div>
+          ${resumeChoice(a) ? `<div class="doc-actions"><span class="badge ${a.resume_tailored ? "solid" : ""}">${a.resume_tailored ? "Tailored for this job" : esc(trackLabel(a.resume_track)) + " resume"}</span></div>`
+            : `<span class="muted">Not recorded. <a href="#/application/${esc(a.id)}/edit">Choose the resume</a></span>`}
           ${a.resume_file_path ? `<div class="file-row">${I.download(15)}<span class="file-name">${esc(a.resume_file_name || "Resume file")}</span>
               <button class="btn" type="button" id="open-resume">Open</button></div>`
             : a.resume_tailored ? `<span class="muted">No file uploaded yet. <a href="#/application/${esc(a.id)}/edit">Upload it</a></span>` : ""}
@@ -1077,12 +1080,9 @@
         </section>
         <section class="section"><h3>Resume</h3>
           <fieldset class="field choice-field"><legend>Which resume did you send?</legend>
-            <div class="choice">
-              <label><input type="radio" name="resume_kind" value="general"${a.resume_tailored ? "" : " checked"}> General</label>
-              <label><input type="radio" name="resume_kind" value="tailored"${a.resume_tailored ? " checked" : ""}> Tailored for this job</label>
+            <div class="choice grid-2">
+              ${RESUME_CHOICES.map(([v, l]) => `<label><input type="radio" name="resume_kind" value="${v}"${resumeChoice(a) === v ? " checked" : ""}> ${l}</label>`).join("")}
             </div></fieldset>
-          <div class="field"><label for="a-resume_track">Resume track</label>
-            <select id="a-resume_track" name="resume_track">${options([["", "—"], ...TRACKS], a.resume_track || "")}</select></div>
           <div id="tailored-box"${a.resume_tailored ? "" : " hidden"}>
             <div class="field"><label for="a-resume_file">Tailored resume file (PDF or Word)</label>
               <div class="file-row" id="current-file"${a.resume_file_path ? "" : " hidden"}>${I.download(15)}<span class="file-name">${esc(a.resume_file_name || "")}</span>
@@ -1157,8 +1157,8 @@
       const data = { id: existing ? existing.id : undefined, interview_dates: a.interview_dates || [] };
       for (const [k, v] of fd.entries()) data[k] = typeof v === "string" ? v.trim() : v;
       data.resume_tailored = data.resume_kind === "tailored";
+      data.resume_track = !data.resume_kind || data.resume_tailored ? null : data.resume_kind;
       delete data.resume_kind;
-      data.resume_track = data.resume_track || null;
       data.date_applied = data.date_applied || (data.status === "completed" ? todayISO() : null);
       data.rejection_date = data.rejection_date || null;
       if (data.job_url) data.job_url = safeUrl(data.job_url) || data.job_url;
@@ -1168,6 +1168,7 @@
       data.application_answers = null; // now kept as question/answer pairs
       const file = data.resume_tailored ? $("#a-resume_file", el).files[0] : null;
       const oldPath = existing && existing.resume_file_path;
+      if (!data.resume_tailored) removeFile = true; // an uploaded file only belongs with a tailored resume
       const saved = await run(async () => {
         let row = await backend.saveApplication(data);
         if (file || (removeFile && oldPath)) {
