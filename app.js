@@ -776,7 +776,8 @@
     if (a.rejection_date) return { key: "rejected", label: "Rejected", cls: "muted-badge" };
     const rounds = (a.interview_dates || []).length;
     if (rounds) return { key: "interviewing", label: rounds > 1 ? `Interviewing · ${rounds} rounds` : "Interviewing", cls: "solid" };
-    const d = a.date_applied ? daysSince(a.date_applied) : 0;
+    if (!a.date_applied) return { key: "applied", label: "Applied", cls: "yes" };
+    const d = daysSince(a.date_applied);
     if (d >= GHOST_DAYS) return { key: "ghosted", label: `Ghosted · ${d}d`, cls: "warn" };
     return { key: "applied", label: d ? `Applied · ${d}d` : "Applied today", cls: "yes" };
   }
