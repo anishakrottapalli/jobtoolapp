@@ -154,22 +154,54 @@
 
   // ---------- filtering / sorting ----------
 
+  // Search: every word typed must appear somewhere (any order, punctuation ignored).
+  // Longer words also match a near-spelling in the key fields (names, companies, titles).
+  function editDistance(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      let best = i;
+      for (let j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        best = Math.min(best, cur[j]);
+      }
+      if (best > max) return max + 1;
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+  function searchMatcher(q) {
+    const words = q.toLowerCase().split(/[\s\-–—,;:/|()]+/).filter(Boolean);
+    if (!words.length) return null;
+    return (hay, key) => {
+      const keyWords = key.split(/[^\p{L}\p{N}]+/u);
+      return words.every((w) => {
+        if (hay.includes(w)) return true;
+        if (w.length < 5) return false;
+        const max = w.length >= 8 ? 2 : 1;
+        return keyWords.some((k) => editDistance(w, k, max) <= max);
+      });
+    };
+  }
+
   function filteredContacts() {
     const { q, status, tag } = state.filters;
-    const needle = q.trim().toLowerCase();
+    const match = searchMatcher(q);
     const rows = state.contacts.map((c) => ({ c, s: summary(c) })).filter(({ c, s }) => {
       if (status === "notcontacted" && s.lastOut) return false;
       if (status === "contacted" && !s.lastOut) return false;
       if (status === "waiting" && !s.waiting) return false;
       if (status === "replied" && !s.lastReply) return false;
       if (tag && !(c.tags || []).includes(tag)) return false;
-      if (needle) {
+      if (match) {
+        const key = [fullName(c), c.company, c.job_title].join(" ").toLowerCase();
         const hay = [
-          fullName(c), c.company, c.job_title, c.location, c.personal_email, c.work_email, c.phone,
+          key, c.location, c.personal_email, c.work_email, c.phone,
           c.referred_by, c.event_met_at, c.notes, (c.tags || []).join(" "),
           ...s.history.map((i) => i.note),
         ].join(" ").toLowerCase();
-        if (!hay.includes(needle)) return false;
+        if (!match(hay, key)) return false;
       }
       return true;
     });
@@ -807,12 +839,15 @@
 
   function filteredApps() {
     const { q, stage, track } = state.appFilters;
-    const needle = q.trim().toLowerCase();
+    const match = searchMatcher(q);
     const rows = state.applications.map((a) => ({ a, st: stageOf(a) })).filter(({ a, st }) => {
       if (stage === "inplay" && (st.key === "rejected" || st.key === "to_start")) return false;
       if (stage !== "all" && stage !== "inplay" && st.key !== stage) return false;
       if (track && resumeChoice(a) !== track) return false;
-      if (needle && ![a.position_title, a.company, a.location, a.notes, a.cover_letter, questionsText(a)].join(" ").toLowerCase().includes(needle)) return false;
+      if (match) {
+        const key = [a.position_title, a.company].join(" ").toLowerCase();
+        if (!match([key, a.location, a.notes, a.cover_letter, questionsText(a)].join(" ").toLowerCase(), key)) return false;
+      }
       return true;
     });
     const { key, dir } = state.appSort;
