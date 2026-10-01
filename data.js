@@ -82,12 +82,23 @@
       async deleteApplication(id) {
         check(await sb.from("applications").delete().eq("id", id));
       },
-      // Tailored resume files live in the private "documents" bucket, under the user's own folder.
-      async uploadFile(appId, file) {
+      // Files live in the private "documents" bucket, under the user's own folder:
+      // <user>/<application>/ for the tailored resume, <user>/<application>/<folder>/ for others (e.g. "prep").
+      async uploadFile(appId, file, folder) {
         const { data } = await sb.auth.getUser();
-        const path = `${data.user.id}/${appId}/${Date.now()}-${safeFileName(file.name)}`;
+        const dir = [data.user.id, appId, folder].filter(Boolean).join("/");
+        const path = `${dir}/${Date.now()}-${safeFileName(file.name)}`;
         check(await sb.storage.from("documents").upload(path, file, { contentType: file.type || undefined }));
         return path;
+      },
+      // Files in an application's folder, newest first: [{ path, name, updated }]
+      async listFiles(appId, folder) {
+        const { data } = await sb.auth.getUser();
+        const dir = `${data.user.id}/${appId}/${folder}`;
+        const items = check(await sb.storage.from("documents").list(dir, { sortBy: { column: "created_at", order: "desc" } }));
+        return items.filter((x) => x.id).map((x) => ({
+          path: `${dir}/${x.name}`, name: x.name.replace(/^\d+-/, ""), updated: x.updated_at || x.created_at,
+        }));
       },
       async fileUrl(path) {
         return check(await sb.storage.from("documents").createSignedUrl(path, 300)).signedUrl;
@@ -217,10 +228,15 @@
         persist();
       },
       // Demo mode keeps files in memory for this visit only.
-      async uploadFile(appId, file) {
-        const path = `demo/${appId}/${safeFileName(file.name)}`;
+      async uploadFile(appId, file, folder) {
+        const path = ["demo", appId, folder, `${Date.now()}-${safeFileName(file.name)}`].filter(Boolean).join("/");
         demoFiles[path] = URL.createObjectURL(file);
         return path;
+      },
+      async listFiles(appId, folder) {
+        const dir = `demo/${appId}/${folder}/`;
+        return Object.keys(demoFiles).filter((p) => p.startsWith(dir)).reverse()
+          .map((path) => ({ path, name: path.slice(dir.length).replace(/^\d+-/, ""), updated: null }));
       },
       async fileUrl(path) {
         if (!demoFiles[path]) throw new Error("Files uploaded in demo mode only last until the page reloads.");

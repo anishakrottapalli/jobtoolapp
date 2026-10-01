@@ -812,7 +812,7 @@
       if (stage === "inplay" && (st.key === "rejected" || st.key === "to_start")) return false;
       if (stage !== "all" && stage !== "inplay" && st.key !== stage) return false;
       if (track && resumeChoice(a) !== track) return false;
-      if (needle && ![a.position_title, a.company, a.location, a.notes, a.resume_text, a.cover_letter, questionsText(a)].join(" ").toLowerCase().includes(needle)) return false;
+      if (needle && ![a.position_title, a.company, a.location, a.notes, a.cover_letter, questionsText(a)].join(" ").toLowerCase().includes(needle)) return false;
       return true;
     });
     const { key, dir } = state.appSort;
@@ -829,10 +829,10 @@
 
   function exportApplications(list) {
     const header = ["Position Title", "Company", "Location", "Job Link", "Status", "Stage", "Date Applied",
-      "Interview Dates", "Rejection Date", "Resume", "Resume File", "Notes", "Resume", "Cover Letter", "Questions"];
+      "Interview Dates", "Rejection Date", "Resume", "Resume File", "Notes", "Cover Letter", "Questions"];
     downloadCsv(`applications-${todayISO()}.csv`, header, list.map(({ a, st }) => [
       a.position_title, a.company, a.location, a.job_url, a.status === "completed" ? "Completed" : "To Start", st.label,
-      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, resumeLabel(a), a.resume_file_name, a.notes, a.resume_text, a.cover_letter, questionsText(a),
+      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, resumeLabel(a), a.resume_file_name, a.notes, a.cover_letter, questionsText(a),
     ]));
   }
 
@@ -971,7 +971,6 @@
           ${a.resume_file_path ? `<div class="file-row">${I.download(15)}<span class="file-name">${esc(a.resume_file_name || "Resume file")}</span>
               <button class="btn" type="button" id="open-resume">Open</button></div>`
             : a.resume_tailored ? `<span class="muted">No file uploaded yet. <a href="#/application/${esc(a.id)}/edit">Upload it</a></span>` : ""}
-          ${a.resume_text ? docBlock(a.resume_text, "resume_text", "resume text") : ""}
         </section>
         <section class="section"><h3>Cover letter</h3>
           ${a.cover_letter ? docBlock(a.cover_letter, "cover_letter", "cover letter") : `<span class="muted">None added</span>`}
@@ -983,6 +982,10 @@
               ${docBlock(x.a, "qa:" + i, "answer")}
             </div>`).join("")
           : `<span class="muted">No questions added. <a href="#/application/${esc(a.id)}/edit">Add questions</a></span>`}
+        </section>
+        <section class="section"><h3>Interview prep</h3>
+          <div id="prep-box"><span class="muted">Loading…</span></div>
+          <input type="file" id="prep-file" hidden>
         </section>
         <section class="section"><h3>Timeline</h3>
           ${actionForm}
@@ -1002,18 +1005,63 @@
         <a class="btn lg" href="#/application/${esc(a.id)}/edit">Edit</a>
       </div>`;
 
-    const openBtn = $("#open-resume", el);
-    if (openBtn) openBtn.addEventListener("click", async () => {
+    const openFile = async (path) => {
       // Open the tab right away so the browser doesn't block it, then point it at the file.
       const win = window.open("", "_blank");
       try {
-        const url = await backend.fileUrl(a.resume_file_path);
+        const url = await backend.fileUrl(path);
         if (win) win.location = url; else location.href = url;
       } catch (err) {
         if (win) win.close();
         alert("Couldn't open the file: " + err.message);
       }
+    };
+    const openBtn = $("#open-resume", el);
+    if (openBtn) openBtn.addEventListener("click", () => openFile(a.resume_file_path));
+
+    // Interview prep: one document per application, replaced whenever it's updated.
+    const prepBox = $("#prep-box", el);
+    const prepInput = $("#prep-file", el);
+    let prepFiles = [];
+    const renderPrep = () => {
+      const f = prepFiles[0];
+      prepBox.innerHTML = f
+        ? `<div class="file-row">${I.download(15)}<span class="file-name">${esc(f.name)}${f.updated ? `<span class="muted small"> · updated ${esc(fmtDate(f.updated.slice(0, 10)))}</span>` : ""}</span>
+             <button class="btn" type="button" data-prep="open">Open</button>
+             <button class="btn" type="button" data-prep="replace">Replace</button>
+             <button class="btn ghost" type="button" data-prep="remove" aria-label="Remove interview prep">${I.trash(14)}</button></div>
+           <span class="muted small">Edit the doc, then Replace it with the new version.</span>`
+        : `<div class="doc-actions"><span class="muted">No interview prep doc yet.</span>
+             <button class="btn" type="button" data-prep="replace">${I.plus(14)} Upload doc</button></div>`;
+      $$("[data-prep]", prepBox).forEach((b) => b.addEventListener("click", async () => {
+        const act = b.dataset.prep;
+        if (act === "open") openFile(f.path);
+        else if (act === "replace") prepInput.click();
+        else if (confirm("Remove the interview prep doc?")) {
+          try { await run(() => Promise.all(prepFiles.map((x) => backend.removeFile(x.path))), el); } catch (e) { /* shown */ }
+          loadPrep();
+        }
+      }));
+    };
+    const loadPrep = async () => {
+      try { prepFiles = await backend.listFiles(a.id, "prep"); } catch (e) { prepFiles = []; }
+      if (prepBox.isConnected) renderPrep();
+    };
+    prepInput.addEventListener("change", async () => {
+      const file = prepInput.files[0];
+      if (!file) return;
+      prepBox.innerHTML = `<span class="muted">Uploading…</span>`;
+      const old = prepFiles;
+      try {
+        await run(async () => {
+          await backend.uploadFile(a.id, file, "prep");
+          await Promise.all(old.map((x) => backend.removeFile(x.path).catch(() => {})));
+        }, el);
+      } catch (e) { /* run() already showed the error */ }
+      prepInput.value = "";
+      loadPrep();
     });
+    loadPrep();
     $$("[data-copy-doc]", el).forEach((b) => b.addEventListener("click", async () => {
       const key = b.dataset.copyDoc;
       const text = key.startsWith("qa:") ? qs[Number(key.slice(3))].a : a[key] || "";
@@ -1090,8 +1138,6 @@
               <input id="a-resume_file" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
               <span class="muted small" id="file-hint">${a.resume_file_path ? "Choose a new file to replace it." : ""}</span></div>
           </div>
-          <div class="field"><label for="a-resume_text">Resume text (optional)</label>
-            <textarea id="a-resume_text" name="resume_text" class="autogrow" rows="3" placeholder="Paste the resume text if you want it searchable">${esc(a.resume_text)}</textarea></div>
         </section>
         <section class="section"><h3>Cover letter</h3>
           <div class="field"><label for="a-cover_letter" class="sr-only">Cover letter</label>
