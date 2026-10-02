@@ -1,4 +1,4 @@
-// Networking Contacts: UI.
+// Jobstack: UI.
 // Routes: #/ (contacts), #/contact/<id>, #/contact/<id>/edit, #/new, #/import, #/tags, #/export, #/settings
 
 (function () {
@@ -45,6 +45,9 @@
     briefcase: (s = 17) => svg(s, '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>'),
     external: (s = 15) => svg(s, '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>'),
     users: (s = 17) => svg(s, '<path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1"/><circle cx="9" cy="8" r="4"/><path d="M22 20v-1a4 4 0 0 0-3-3.87M16 4.13a4 4 0 0 1 0 7.75"/>'),
+    copy: (s = 16) => svg(s, '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>'),
+    doc: (s = 20) => svg(s, '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5zM14 3v5h5M9 13h6M9 17h4"/>'),
+    book: (s = 17) => svg(s, '<path d="M4 5a2 2 0 0 1 2-2h14v16H6a2 2 0 0 0-2 2V5zM4 19a2 2 0 0 0 2 2h14"/>'),
     tag: (s = 17) => svg(s, '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>'),
     download: (s = 17) => svg(s, '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>'),
     upload: (s = 17) => svg(s, '<path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>'),
@@ -461,11 +464,12 @@
       <div class="shell">
         <div class="nav-scrim"></div>
         <nav class="sidebar" aria-label="Main">
-          <a class="brand" href="#/"><span class="brand-mark">${I.logo()}</span>Networking</a>
+          <a class="brand" href="#/"><span class="brand-mark">${I.logo()}</span>Jobstack</a>
           ${section("workspace", "Workspace", `
             <a class="nav-item" data-nav="dashboard" href="#/">${I.home()}<span>Dashboard</span></a>
             <a class="nav-item" data-nav="contacts" href="#/contacts">${I.users()}<span>Contacts</span><span class="count mono" id="nav-count"></span></a>
             <a class="nav-item" data-nav="applications" href="#/applications">${I.briefcase()}<span>Applications</span><span class="count mono" id="nav-app-count"></span></a>
+            <a class="nav-item" data-nav="resources" href="#/resources">${I.book()}<span>Resources</span></a>
             <a class="nav-item" data-nav="tags" href="#/tags">${I.tag()}<span>Tags</span></a>
             <a class="nav-item" data-nav="export" href="#/export">${I.download()}<span>Export</span></a>`)}
           ${section("account", "Account", `
@@ -547,6 +551,7 @@
     const page = $("#page");
     const p = state.route.page;
     if (p === "tags") renderTagsPage(page);
+    else if (p === "resources") renderResourcesPage(page);
     else if (p === "export") renderExportPage(page);
     else if (p === "settings") renderSettingsPage(page);
     else if (p === "dashboard") renderDashboardPage(page);
@@ -966,9 +971,9 @@
     if (a.rejection_date) events.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin", del: "rejection" });
     events.sort((x, y) => y.date.localeCompare(x.date));
     const qs = questionsOf(a);
-    const docBlock = (text, key, label) => `<p class="notes-box doc-full">${esc(text)}</p>
-      <div class="doc-actions"><button class="btn" type="button" data-copy-doc="${esc(key)}">${I.check(13)} Copy ${label}</button>
-        <span class="muted small">${wordCount(text)} words</span></div>`;
+    const docBlock = (text, key, label) => `<div class="doc-wrap"><p class="notes-box doc-full">${esc(text)}</p>
+      <button class="icon-btn doc-copy" type="button" data-copy-doc="${esc(key)}" title="Copy ${label}" aria-label="Copy ${label}">${I.copy()}</button></div>
+      <div class="doc-actions"><span class="muted small">${wordCount(text)} words</span></div>`;
     const action = state.appAction;
     const actionForm = action ? `
       <form class="log-form" id="app-action-form">
@@ -1102,8 +1107,9 @@
       const text = key.startsWith("qa:") ? qs[Number(key.slice(3))].a : a[key] || "";
       try { await navigator.clipboard.writeText(text); } catch (e) { /* clipboard blocked */ }
       const label = b.innerHTML;
-      b.textContent = "Copied ✓";
-      setTimeout(() => (b.innerHTML = label), 1500);
+      b.innerHTML = I.check(16);
+      b.title = "Copied";
+      setTimeout(() => { b.innerHTML = label; b.title = b.getAttribute("aria-label"); }, 1500);
     }));
     $$("[data-app-act]", el).forEach((b) => b.addEventListener("click", () => {
       state.appAction = b.dataset.appAct === "applied" ? "applied" : b.dataset.appAct;
@@ -1288,6 +1294,87 @@
       state.filters = { q: "", status: "all", tag: a.dataset.tag };
       $("#search").value = "";
     }));
+  }
+
+  function renderResourcesPage(page) {
+    const items = store("resources") || [];
+    const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return u; } };
+    page.innerHTML = `
+      <div class="page-head"><div><h1>Resources</h1></div></div>
+      <form class="card settings-card" id="res-form">
+        <div class="field"><label for="res-title">Title</label><input id="res-title" required placeholder="e.g. Resume guide"></div>
+        <div class="field"><label for="res-url">Link</label><input id="res-url" type="url" required placeholder="https://"></div>
+        <div><button class="btn primary" type="submit">${I.plus()} Add resource</button></div>
+      </form>
+      <div class="card option-card" style="margin-top:16px">
+        <div><h2>Files</h2><p>PDFs and other documents, stored privately in your account.</p></div>
+        <input type="file" id="res-file" hidden accept=".pdf,.doc,.docx,application/pdf">
+        <button class="btn primary" id="res-upload" type="button">${I.upload(15)} Upload a file</button>
+      </div>
+      <div id="res-files" style="margin-top:12px"></div>
+      ${items.length ? `<div class="tag-grid" style="margin-top:16px">${items.map((r, i) => `
+        <div class="card tag-card">
+          <a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" style="min-width:0"><b>${esc(r.title)}</b><br><span>${esc(r.note || host(r.url))}</span></a>
+          <button class="icon-btn" data-del="${i}" aria-label="Remove ${esc(r.title)}">${I.trash()}</button>
+        </div>`).join("")}</div>` : `<div class="card empty" style="margin-top:16px"><p>No resources yet. Save links to guides, templates and tools you want close at hand.</p></div>`}`;
+    $("#res-form", page).addEventListener("submit", (e) => {
+      e.preventDefault();
+      const url = $("#res-url").value.trim();
+      if (!/^https?:\/\//i.test(url)) return;
+      store("resources", [...items, { title: $("#res-title").value.trim(), url }]);
+      renderResourcesPage(page);
+    });
+    $$("[data-del]", page).forEach((b) => b.addEventListener("click", () => {
+      store("resources", items.filter((_, i) => i !== Number(b.dataset.del)));
+      renderResourcesPage(page);
+    }));
+
+    // Uploaded files (PDFs etc.) live in the same private storage as resumes.
+    const box = $("#res-files", page);
+    const input = $("#res-file", page);
+    const loadFiles = async () => {
+      let files = [];
+      try { files = await backend.listFiles("resources", "files"); } catch (e) { /* none yet */ }
+      if (!box.isConnected) return;
+      const kind = (n) => (n.match(/\.([a-z0-9]+)$/i) || [, "file"])[1].toUpperCase();
+      const title = (n) => n.replace(/\.[a-z0-9]+$/i, "").replace(/_/g, " ");
+      box.innerHTML = files.length ? `<div class="file-grid">${files.map((f, i) => `
+        <div class="card file-card">
+          <a class="file-main" href="#" data-open="${i}">
+            <span class="file-icon ${kind(f.name) === "PDF" ? "pdf" : ""}">${I.doc()}<em>${esc(kind(f.name))}</em></span>
+            <span class="file-title">${esc(title(f.name))}</span>
+            <span class="file-meta">${f.updated ? `Added ${esc(fmtDate(f.updated.slice(0, 10)))}` : "Click to open"}</span>
+          </a>
+          <button class="icon-btn file-rm" data-rm="${i}" aria-label="Remove ${esc(f.name)}">${I.trash()}</button>
+        </div>`).join("")}</div>` : "";
+      $$("[data-open]", box).forEach((a) => a.addEventListener("click", async (e) => {
+        e.preventDefault();
+        const win = window.open("", "_blank");
+        try {
+          const url = await backend.fileUrl(files[Number(a.dataset.open)].path);
+          if (win) win.location = url; else location.href = url;
+        } catch (err) {
+          if (win) win.close();
+          alert("Couldn't open the file: " + err.message);
+        }
+      }));
+      $$("[data-rm]", box).forEach((b) => b.addEventListener("click", async () => {
+        const f = files[Number(b.dataset.rm)];
+        if (!confirm(`Remove "${f.name}"?`)) return;
+        try { await run(() => backend.removeFile(f.path)); } catch (e) { /* shown */ }
+        loadFiles();
+      }));
+    };
+    $("#res-upload", page).addEventListener("click", () => input.click());
+    input.addEventListener("change", async () => {
+      const file = input.files[0];
+      if (!file) return;
+      box.innerHTML = `<span class="muted">Uploading…</span>`;
+      try { await run(() => backend.uploadFile("resources", file, "files")); } catch (e) { /* shown */ }
+      input.value = "";
+      loadFiles();
+    });
+    loadFiles();
   }
 
   function renderExportPage(page) {
@@ -1829,7 +1916,7 @@
   function renderNotConfigured() {
     root.innerHTML = `
       <div class="auth"><div class="card auth-card">
-        <span class="brand"><span class="brand-mark">${I.logo()}</span>Networking</span>
+        <span class="brand"><span class="brand-mark">${I.logo()}</span>Jobstack</span>
         <h1>Almost ready</h1>
         <p class="muted">This app isn't connected to its database yet. To try it with sample data, open <a href="?demo#/">demo mode</a>.</p>
       </div></div>`;
@@ -1838,7 +1925,7 @@
   function renderLogin() {
     root.innerHTML = `
       <div class="auth"><form class="card auth-card" id="login">
-        <span class="brand"><span class="brand-mark">${I.logo()}</span>Networking</span>
+        <span class="brand"><span class="brand-mark">${I.logo()}</span>Jobstack</span>
         <h1>Sign in</h1>
         <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="username" required></div>
         <div class="field"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" required></div>
@@ -1879,6 +1966,7 @@
     if (h === "/contacts") return { page: "contacts" };
     if (h === "/applications") return { page: "applications" };
     if (h === "/tags") return { page: "tags" };
+    if (h === "/resources") return { page: "resources" };
     if (h === "/export") return { page: "export" };
     if (h === "/settings") return { page: "settings" };
     return { page: "dashboard" };

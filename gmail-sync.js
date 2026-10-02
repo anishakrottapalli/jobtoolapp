@@ -5,8 +5,8 @@
 
 (function () {
   function code({ supabaseUrl, supabaseKey, token }) {
-    return `// Networking Contacts — Gmail sync
-// Checks Gmail every hour and logs emails to/from people in your Networking Contacts app.
+    return `// Jobstack — Gmail sync
+// Checks Gmail every hour and logs emails to/from people in your Jobstack app.
 // Only reads who an email was from/to and when. Never reads, sends, or deletes email content.
 // To stop syncing: in the app, go to Settings › Gmail sync › Disconnect.
 
@@ -124,7 +124,7 @@ function rpc_(name, body) {
     payload: JSON.stringify(body),
     muteHttpExceptions: true,
   });
-  if (res.getResponseCode() >= 300) throw new Error('Networking Contacts error: ' + res.getContentText());
+  if (res.getResponseCode() >= 300) throw new Error('Jobstack error: ' + res.getContentText());
   return JSON.parse(res.getContentText() || 'null');
 }
 `;

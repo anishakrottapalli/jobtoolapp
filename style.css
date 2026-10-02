@@ -405,3 +405,21 @@ textarea.autogrow { overflow: hidden; resize: none; }
   .panel { width: 100%; border-left: none; }
   .cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+.file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.file-card { position: relative; transition: border-color .15s, background .15s; }
+.file-card:hover { background: var(--hover); border-color: var(--line-2); }
+.file-main { display: flex; flex-direction: column; gap: 6px; padding: 16px; height: 100%; color: var(--fg); }
+.file-main:hover { text-decoration: none; }
+.file-icon { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; padding: 6px 10px 6px 8px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--accent-text); margin-bottom: 6px; }
+.file-icon.pdf { background: #2A1A1C; color: var(--danger); }
+.file-icon em { font-style: normal; font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.file-title { font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.file-meta { color: var(--muted); font-size: 12px; margin-top: auto; }
+.file-rm { position: absolute; top: 10px; right: 10px; opacity: 0; transition: opacity .15s; }
+.file-card:hover .file-rm, .file-rm:focus-visible { opacity: 1; }
+@media (hover: none) { .file-rm { opacity: 1; } }
+
+.doc-wrap { position: relative; }
+.doc-wrap .doc-full { padding-right: 52px; }
+.doc-copy { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; background: var(--card); }
