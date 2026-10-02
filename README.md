@@ -1,4 +1,4 @@
-# Jobstack
+# Job Central
 
 A single place to track networking contacts: who you've reached out to, how, whether they replied, and context about each person.
 

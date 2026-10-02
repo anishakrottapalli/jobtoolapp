@@ -82,6 +82,17 @@
       async deleteApplication(id) {
         check(await sb.from("applications").delete().eq("id", id));
       },
+      // Small personal records grouped by section (see 009_items.sql).
+      async listItems(section) {
+        return check(await sb.from("items").select("id, data, created_at").eq("section", section).order("created_at"));
+      },
+      async saveItem(section, data, id) {
+        if (id) return check(await sb.from("items").update({ data }).eq("id", id).select("id, data, created_at").single());
+        return check(await sb.from("items").insert({ section, data }).select("id, data, created_at").single());
+      },
+      async deleteItem(id) {
+        check(await sb.from("items").delete().eq("id", id));
+      },
       // Files live in the private "documents" bucket, under the user's own folder:
       // <user>/<application>/ for the tailored resume, <user>/<application>/<folder>/ for others (e.g. "prep").
       async uploadFile(appId, file, folder) {
@@ -225,6 +236,21 @@
       },
       async deleteApplication(id) {
         state.applications = state.applications.filter((x) => x.id !== id);
+        persist();
+      },
+      async listItems(section) {
+        return (state.items || []).filter((x) => x.section === section).map(({ id, data, created_at }) => ({ id, data, created_at }));
+      },
+      async saveItem(section, data, id) {
+        state.items = state.items || [];
+        let row = id && state.items.find((x) => x.id === id);
+        if (row) row.data = data;
+        else state.items.push((row = { id: uid(), section, data, created_at: now() }));
+        persist();
+        return { id: row.id, data: row.data, created_at: row.created_at };
+      },
+      async deleteItem(id) {
+        state.items = (state.items || []).filter((x) => x.id !== id);
         persist();
       },
       // Demo mode keeps files in memory for this visit only.

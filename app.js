@@ -1,4 +1,4 @@
-// Jobstack: UI.
+// Job Central: UI.
 // Routes: #/ (contacts), #/contact/<id>, #/contact/<id>/edit, #/new, #/import, #/tags, #/export, #/settings
 
 (function () {
@@ -45,6 +45,8 @@
     briefcase: (s = 17) => svg(s, '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>'),
     external: (s = 15) => svg(s, '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>'),
     users: (s = 17) => svg(s, '<path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1"/><circle cx="9" cy="8" r="4"/><path d="M22 20v-1a4 4 0 0 0-3-3.87M16 4.13a4 4 0 0 1 0 7.75"/>'),
+    user: (s = 17) => svg(s, '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>'),
+    target: (s = 17) => svg(s, '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>'),
     copy: (s = 16) => svg(s, '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>'),
     doc: (s = 20) => svg(s, '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5zM14 3v5h5M9 13h6M9 17h4"/>'),
     book: (s = 17) => svg(s, '<path d="M4 5a2 2 0 0 1 2-2h14v16H6a2 2 0 0 0-2 2V5zM4 19a2 2 0 0 0 2 2h14"/>'),
@@ -464,13 +466,15 @@
       <div class="shell">
         <div class="nav-scrim"></div>
         <nav class="sidebar" aria-label="Main">
-          <a class="brand" href="#/"><span class="brand-mark">${I.logo()}</span>Jobstack</a>
+          <a class="brand" href="#/"><span class="brand-mark">${I.logo()}</span>Job Central</a>
           ${section("workspace", "Workspace", `
             <a class="nav-item" data-nav="dashboard" href="#/">${I.home()}<span>Dashboard</span></a>
             <a class="nav-item" data-nav="contacts" href="#/contacts">${I.users()}<span>Contacts</span><span class="count mono" id="nav-count"></span></a>
             <a class="nav-item" data-nav="applications" href="#/applications">${I.briefcase()}<span>Applications</span><span class="count mono" id="nav-app-count"></span></a>
+            <a class="nav-item" data-nav="documents" href="#/documents">${I.doc(17)}<span>Documents</span></a>
+            <a class="nav-item" data-nav="profile" href="#/profile">${I.user()}<span>Profile</span></a>
             <a class="nav-item" data-nav="resources" href="#/resources">${I.book()}<span>Resources</span></a>
-            <a class="nav-item" data-nav="tags" href="#/tags">${I.tag()}<span>Tags</span></a>
+            <a class="nav-item" data-nav="vision" href="#/vision">${I.target()}<span>Career Vision</span></a>
             <a class="nav-item" data-nav="export" href="#/export">${I.download()}<span>Export</span></a>`)}
           ${section("account", "Account", `
             <a class="nav-item" data-nav="settings" href="#/settings">${I.settings()}<span>Settings</span></a>`)}
@@ -487,8 +491,6 @@
               <input id="search" type="search" placeholder="Search contacts" autocomplete="off">
               <span class="kbd">/</span>
             </label>
-            <span class="spacer"></span>
-            <a class="btn primary" href="#/new" aria-label="Add Contact">${I.plus()}<span class="add-label">Add Contact</span></a>
           </header>
           ${backend.demo ? `<div class="demo-banner">Demo mode: sample data, saved only in this browser. <a href="${location.pathname}">Leave demo</a></div>` : ""}
           <main class="page" id="page"></main>
@@ -534,10 +536,6 @@
     const search = $("#search");
     const onApps = state.route.page === "applications";
     search.placeholder = onApps ? "Search applications" : "Search contacts";
-    const addBtn = $(".topbar .btn.primary");
-    addBtn.href = onApps ? "#/new-application" : "#/new";
-    addBtn.setAttribute("aria-label", onApps ? "Add Application" : "Add Contact");
-    $(".add-label", addBtn).textContent = onApps ? "Add Application" : "Add Contact";
     const q = onApps ? state.appFilters.q : state.filters.q;
     if (document.activeElement !== search && search.value !== q) search.value = q;
     $("#me-name").textContent = state.displayName;
@@ -550,8 +548,10 @@
   function renderPage() {
     const page = $("#page");
     const p = state.route.page;
-    if (p === "tags") renderTagsPage(page);
-    else if (p === "resources") renderResourcesPage(page);
+    if (p === "resources") renderResourcesPage(page);
+    else if (p === "documents") renderDocumentsPage(page);
+    else if (p === "profile") renderProfilePage(page);
+    else if (p === "vision") renderVisionPage(page);
     else if (p === "export") renderExportPage(page);
     else if (p === "settings") renderSettingsPage(page);
     else if (p === "dashboard") renderDashboardPage(page);
@@ -709,7 +709,7 @@
           <h2>Contacts <span id="shown-count"></span></h2>
           <div class="filters">
             ${STATUS_FILTERS.map(([v, l]) => `<button class="chip${state.filters.status === v ? " on" : ""}" data-status="${v}" aria-pressed="${state.filters.status === v}">${l}</button>`).join("")}
-            <select class="select" id="tag-filter" aria-label="Filter by tag">${options([["", "All tags"], ...tagNames()], state.filters.tag)}</select>
+            <select class="select" id="tag-filter" aria-label="Filter by tag">${options([["", "All tags"], ...allTags().map(([t, n]) => [t, `${t} (${n})`])], state.filters.tag)}</select>
           </div>
         </div>
         <div id="rows"></div>
@@ -1281,64 +1281,87 @@
     }
   }
 
-  function renderTagsPage(page) {
-    const tags = allTags();
-    const untagged = state.contacts.filter((c) => !(c.tags || []).length).length;
-    page.innerHTML = `
-      <div class="page-head"><div><h1>Tags</h1></div></div>
-      ${tags.length ? `<div class="tag-grid">
-        ${tags.map(([t, n]) => `<a class="card tag-card" href="#/contacts" data-tag="${esc(t)}"><b>${esc(t)}</b><span>${n} contact${n === 1 ? "" : "s"}</span></a>`).join("")}
-      </div>` : `<div class="card empty"><p>No tags yet. Add tags when you create or edit a contact, like "alumni" or "fintech".</p></div>`}
-      ${untagged && tags.length ? `<p class="muted">${untagged} contact${untagged === 1 ? " has" : "s have"} no tags.</p>` : ""}`;
-    $$("[data-tag]", page).forEach((a) => a.addEventListener("click", () => {
-      state.filters = { q: "", status: "all", tag: a.dataset.tag };
-      $("#search").value = "";
-    }));
+  // ---------- Documents, Profile, Resources, Career Vision ----------
+
+  const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return u; } };
+  const pageHead = (title, intro) =>
+    `<div class="page-head"><div><h1>${title}</h1>${intro ? `<p class="muted" style="margin:6px 0 0">${intro}</p>` : ""}</div></div>`;
+  const uploadBtn = `<button class="btn primary" type="button" data-upload>${I.upload(15)} Upload</button>`;
+  const addBtn = (label = "Add") => `<button class="btn primary" type="button" data-add>${I.plus(15)} ${label}</button>`;
+  const block = (id, title, desc, action) => `
+    <section class="block" id="${id}">
+      <div class="card option-card"><div><h2>${title}</h2><p>${desc}</p></div>${action}</div>
+      <div class="block-body"></div>
+    </section>`;
+
+  // Icon button that copies text, then flashes a check mark.
+  function wireCopy(btn, getText) {
+    btn.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(getText()); } catch (e) { /* clipboard blocked */ }
+      const was = btn.innerHTML;
+      btn.innerHTML = I.check(16);
+      setTimeout(() => (btn.innerHTML = was), 1500);
+    });
   }
 
-  function renderResourcesPage(page) {
-    const items = store("resources") || [];
-    const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return u; } };
-    page.innerHTML = `
-      <div class="page-head"><div><h1>Resources</h1></div></div>
-      <form class="card settings-card" id="res-form">
-        <div class="field"><label for="res-title">Title</label><input id="res-title" required placeholder="e.g. Resume guide"></div>
-        <div class="field"><label for="res-url">Link</label><input id="res-url" type="url" required placeholder="https://"></div>
-        <div><button class="btn primary" type="submit">${I.plus()} Add resource</button></div>
-      </form>
-      <div class="card option-card" style="margin-top:16px">
-        <div><h2>Files</h2><p>PDFs and other documents, stored privately in your account.</p></div>
-        <input type="file" id="res-file" hidden accept=".pdf,.doc,.docx,application/pdf">
-        <button class="btn primary" id="res-upload" type="button">${I.upload(15)} Upload a file</button>
-      </div>
-      <div id="res-files" style="margin-top:12px"></div>
-      ${items.length ? `<div class="tag-grid" style="margin-top:16px">${items.map((r, i) => `
-        <div class="card tag-card">
-          <a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer" style="min-width:0"><b>${esc(r.title)}</b><br><span>${esc(r.note || host(r.url))}</span></a>
-          <button class="icon-btn" data-del="${i}" aria-label="Remove ${esc(r.title)}">${I.trash()}</button>
-        </div>`).join("")}</div>` : `<div class="card empty" style="margin-top:16px"><p>No resources yet. Save links to guides, templates and tools you want close at hand.</p></div>`}`;
-    $("#res-form", page).addEventListener("submit", (e) => {
-      e.preventDefault();
-      const url = $("#res-url").value.trim();
-      if (!/^https?:\/\//i.test(url)) return;
-      store("resources", [...items, { title: $("#res-title").value.trim(), url }]);
-      renderResourcesPage(page);
-    });
-    $$("[data-del]", page).forEach((b) => b.addEventListener("click", () => {
-      store("resources", items.filter((_, i) => i !== Number(b.dataset.del)));
-      renderResourcesPage(page);
-    }));
+  const isMarkdown = (name) => /\.(md|markdown)$/i.test(name);
 
-    // Uploaded files (PDFs etc.) live in the same private storage as resumes.
-    const box = $("#res-files", page);
-    const input = $("#res-file", page);
-    const loadFiles = async () => {
+  // Full-screen reader for a stored markdown file. The file itself stays as .md; this only renders it.
+  async function openMarkdown(path, name) {
+    let text;
+    try {
+      const res = await fetch(await backend.fileUrl(path));
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      text = await res.text();
+    } catch (err) {
+      alert("Couldn't open the file: " + err.message);
+      return;
+    }
+    const html = window.marked && window.DOMPurify ? DOMPurify.sanitize(marked.parse(text)) : `<pre>${esc(text)}</pre>`;
+    const el = document.createElement("div");
+    el.className = "reader";
+    el.innerHTML = `
+      <div class="reader-bar">
+        <span class="reader-name">${esc(name.replace(/\.(md|markdown)$/i, "").replace(/_/g, " "))}</span>
+        <button class="btn" type="button" data-md-copy>${I.copy(15)} Copy markdown</button>
+        <button class="btn" type="button" data-md-dl>${I.download(15)} Download .md</button>
+        <button class="icon-btn" type="button" data-md-close aria-label="Close">${I.close()}</button>
+      </div>
+      <article class="reader-body markdown">${html}</article>`;
+    const close = () => { el.remove(); document.removeEventListener("keydown", onKey); };
+    const onKey = (e) => { if (e.key === "Escape") close(); };
+    document.addEventListener("keydown", onKey);
+    $("[data-md-close]", el).addEventListener("click", close);
+    $("[data-md-copy]", el).addEventListener("click", async (e) => {
+      try { await navigator.clipboard.writeText(text); } catch (err) { /* clipboard blocked */ }
+      e.currentTarget.textContent = "Copied ✓";
+    });
+    $("[data-md-dl]", el).addEventListener("click", () => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([text], { type: "text/markdown" }));
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+    document.body.append(el);
+  }
+
+  // A grid of uploaded files kept in private storage (appId/folder). The block's [data-upload] button adds files.
+  function mountFiles(sectionEl, appId, folder, emptyText, accept) {
+    const body = $(".block-body", sectionEl);
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.hidden = true;
+    input.accept = accept || ".pdf,.doc,.docx,application/pdf";
+    sectionEl.append(input);
+    const kind = (n) => (isMarkdown(n) ? "MD" : (n.match(/\.([a-z0-9]+)$/i) || [, "file"])[1].toUpperCase());
+    const title = (n) => n.replace(/\.[a-z0-9]+$/i, "").replace(/_/g, " ").replace(/\s+[0-9a-f]{32}$/i, "");
+    const load = async () => {
       let files = [];
-      try { files = await backend.listFiles("resources", "files"); } catch (e) { /* none yet */ }
-      if (!box.isConnected) return;
-      const kind = (n) => (n.match(/\.([a-z0-9]+)$/i) || [, "file"])[1].toUpperCase();
-      const title = (n) => n.replace(/\.[a-z0-9]+$/i, "").replace(/_/g, " ");
-      box.innerHTML = files.length ? `<div class="file-grid">${files.map((f, i) => `
+      try { files = await backend.listFiles(appId, folder); } catch (e) { /* none yet */ }
+      if (!body.isConnected) return;
+      body.innerHTML = files.length ? `<div class="file-grid">${files.map((f, i) => `
         <div class="card file-card">
           <a class="file-main" href="#" data-open="${i}">
             <span class="file-icon ${kind(f.name) === "PDF" ? "pdf" : ""}">${I.doc()}<em>${esc(kind(f.name))}</em></span>
@@ -1346,35 +1369,323 @@
             <span class="file-meta">${f.updated ? `Added ${esc(fmtDate(f.updated.slice(0, 10)))}` : "Click to open"}</span>
           </a>
           <button class="icon-btn file-rm" data-rm="${i}" aria-label="Remove ${esc(f.name)}">${I.trash()}</button>
-        </div>`).join("")}</div>` : "";
-      $$("[data-open]", box).forEach((a) => a.addEventListener("click", async (e) => {
+        </div>`).join("")}</div>` : `<div class="card empty"><p>${emptyText}</p></div>`;
+      $$("[data-open]", body).forEach((a) => a.addEventListener("click", async (e) => {
         e.preventDefault();
+        const file = files[Number(a.dataset.open)];
+        if (isMarkdown(file.name)) return openMarkdown(file.path, file.name);
         const win = window.open("", "_blank");
         try {
-          const url = await backend.fileUrl(files[Number(a.dataset.open)].path);
+          const url = await backend.fileUrl(file.path);
           if (win) win.location = url; else location.href = url;
         } catch (err) {
           if (win) win.close();
           alert("Couldn't open the file: " + err.message);
         }
       }));
-      $$("[data-rm]", box).forEach((b) => b.addEventListener("click", async () => {
+      $$("[data-rm]", body).forEach((b) => b.addEventListener("click", async () => {
         const f = files[Number(b.dataset.rm)];
         if (!confirm(`Remove "${f.name}"?`)) return;
         try { await run(() => backend.removeFile(f.path)); } catch (e) { /* shown */ }
-        loadFiles();
+        load();
       }));
     };
-    $("#res-upload", page).addEventListener("click", () => input.click());
+    $("[data-upload]", sectionEl).addEventListener("click", () => input.click());
     input.addEventListener("change", async () => {
-      const file = input.files[0];
-      if (!file) return;
-      box.innerHTML = `<span class="muted">Uploading…</span>`;
-      try { await run(() => backend.uploadFile("resources", file, "files")); } catch (e) { /* shown */ }
+      const chosen = [...input.files];
+      if (!chosen.length) return;
+      body.innerHTML = `<span class="muted">Uploading…</span>`;
+      try { await run(async () => { for (const f of chosen) await backend.uploadFile(appId, f, folder); }); } catch (e) { /* shown */ }
       input.value = "";
-      loadFiles();
+      load();
     });
-    loadFiles();
+    load();
+  }
+
+  // A list of small records (skills, references, ...) with add / edit / delete, stored via backend.items.
+  // cfg: { fields: [{ name, label, type, required, options, placeholder, wide }], render(data), empty, sort?, copy?(data) }
+  function mountItems(sectionEl, section, cfg) {
+    const body = $(".block-body", sectionEl);
+    let items = [];
+    let editing = null; // null, "new", or an item id
+    const fieldHtml = (f, v) => {
+      const id = `f-${section}-${f.name}`;
+      const val = v == null ? "" : v;
+      const attrs = `id="${id}" name="${f.name}"${f.required ? " required" : ""}`;
+      const control = f.type === "textarea" ? `<textarea ${attrs} rows="4" placeholder="${esc(f.placeholder || "")}">${esc(val)}</textarea>`
+        : f.type === "select" ? `<select ${attrs}>${options(f.options, val || f.options[0])}</select>`
+        : `<input ${attrs} type="${f.type || "text"}" value="${esc(val)}" placeholder="${esc(f.placeholder || "")}">`;
+      return `<div class="field"><label for="${id}">${f.label}</label>${control}</div>`;
+    };
+    const draw = () => {
+      const list = cfg.sort ? [...items].sort((a, b) => cfg.sort(a.data, b.data)) : items;
+      const cur = editing && editing !== "new" ? items.find((x) => x.id === editing) : null;
+      const form = editing ? `
+        <form class="card item-form">
+          ${cfg.fields.map((f) => fieldHtml(f, cur ? cur.data[f.name] : "")).join("")}
+          <div class="form-btns"><button type="button" class="btn ghost" data-cancel>Cancel</button><button class="btn primary" type="submit">Save</button></div>
+        </form>` : "";
+      const card = (it) => `
+        <div class="card item-card">
+          <div class="item-main">${cfg.render(it.data)}</div>
+          <div class="item-actions">
+            ${cfg.copy ? `<button class="icon-btn" data-copy="${it.id}" aria-label="Copy" title="Copy">${I.copy()}</button>` : ""}
+            <button class="icon-btn" data-edit="${it.id}" aria-label="Edit" title="Edit">${I.pencil()}</button>
+            <button class="icon-btn" data-del="${it.id}" aria-label="Delete" title="Delete">${I.trash()}</button>
+          </div>
+        </div>`;
+      const grid = (rows) => `<div class="item-grid${cfg.compact ? " compact" : ""}${cfg.wide ? " wide" : ""}">${rows.map(card).join("")}</div>`;
+      let listHtml;
+      if (cfg.groupBy) {
+        const groups = new Map();
+        list.forEach((it) => { const g = cfg.groupBy(it.data); groups.set(g, [...(groups.get(g) || []), it]); });
+        listHtml = [...groups].sort((a, b) => a[0].localeCompare(b[0])).map(([g, rows]) => `<h3 class="group-title">${esc(g)} <span class="muted small">${rows.length}</span></h3>${grid(rows)}`).join("");
+      } else listHtml = grid(list);
+      body.innerHTML = form + (list.length ? listHtml : editing ? "" : `<div class="card empty"><p>${cfg.empty}</p></div>`);
+      const formEl = $("form", body);
+      if (formEl) {
+        $("[data-cancel]", formEl).addEventListener("click", () => { editing = null; draw(); });
+        formEl.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const data = {};
+          cfg.fields.forEach((f) => { data[f.name] = String(formEl.elements[f.name].value).trim(); });
+          try {
+            const saved = await run(() => backend.saveItem(section, data, cur ? cur.id : undefined), formEl);
+            if (cur) Object.assign(cur, saved); else items.push(saved);
+            editing = null;
+            draw();
+          } catch (err) { /* shown */ }
+        });
+        const first = formEl.elements[0];
+        if (first) first.focus();
+      }
+      $$("[data-edit]", body).forEach((b) => b.addEventListener("click", () => { editing = b.dataset.edit; draw(); }));
+      $$("[data-del]", body).forEach((b) => b.addEventListener("click", async () => {
+        if (!confirm("Delete this?")) return;
+        try { await run(() => backend.deleteItem(b.dataset.del)); } catch (err) { return; }
+        items = items.filter((x) => x.id !== b.dataset.del);
+        draw();
+      }));
+      $$("[data-copy]", body).forEach((b) => wireCopy(b, () => cfg.copy(items.find((x) => x.id === b.dataset.copy).data)));
+    };
+    $("[data-add]", sectionEl).addEventListener("click", () => { editing = "new"; draw(); });
+    (async () => {
+      try { items = await backend.listItems(section); } catch (err) {
+        body.innerHTML = `<div class="card empty"><p>Couldn't load this section: ${esc(err.message)}. If it says the table is missing, run supabase/migrations/009_items.sql in Supabase.</p></div>`;
+        return;
+      }
+      if (body.isConnected) draw();
+    })();
+  }
+
+  // One long piece of text that saves itself when you click away.
+  function mountNote(sectionEl, section, placeholder) {
+    const body = $(".block-body", sectionEl);
+    body.innerHTML = `<span class="muted">Loading…</span>`;
+    (async () => {
+      let item = null;
+      try { item = (await backend.listItems(section))[0] || null; } catch (err) {
+        body.innerHTML = `<div class="card empty"><p>Couldn't load this section: ${esc(err.message)}. If it says the table is missing, run supabase/migrations/009_items.sql in Supabase.</p></div>`;
+        return;
+      }
+      if (!body.isConnected) return;
+      body.innerHTML = `<div class="field"><label for="note-${section}" class="sr-only">Text</label>
+        <textarea id="note-${section}" class="autogrow note-box" rows="10" placeholder="${esc(placeholder)}">${esc(item ? item.data.text : "")}</textarea></div>
+        <span class="muted small" id="note-status-${section}">Saves when you click away.</span>`;
+      const ta = $("textarea", body);
+      const fit = () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + 2 + "px"; };
+      ta.addEventListener("input", fit);
+      fit();
+      let last = ta.value;
+      ta.addEventListener("blur", async () => {
+        if (ta.value === last) return;
+        const status = $(`#note-status-${section}`, body);
+        status.textContent = "Saving…";
+        try {
+          item = await backend.saveItem(section, { text: ta.value }, item ? item.id : undefined);
+          last = ta.value;
+          status.textContent = "Saved ✓";
+        } catch (err) { status.textContent = "Couldn't save: " + err.message; }
+      });
+    })();
+  }
+
+  function renderDocumentsPage(page) {
+    page.innerHTML = pageHead("Documents", "Files you store and pull up when you need them.")
+      + block("doc-letters", "Recommendation letters", "Letters from managers, professors and mentors.", uploadBtn);
+    mountFiles($("#doc-letters", page), "documents", "letters", "No letters yet. Upload a PDF or Word file.");
+  }
+
+  // Profile is a hub of cards; each card opens its own page (#/profile/resume, /skills, /references).
+  function renderProfilePage(page) {
+    const sub = state.route.sub;
+    if (sub === "resume") return renderResumePage(page);
+    if (sub === "skills") return renderSkillsPage(page);
+    if (sub === "references") return renderReferencesPage(page);
+    const cards = [
+      ["resume", I.doc(22), "Resume", "Every version of your resume, plus the content behind it: summary, work history and projects."],
+      ["skills", I.target(22), "Skills", "What you can do, grouped by area."],
+      ["references", I.user(22), "References", "People who've agreed to vouch for you."],
+    ];
+    page.innerHTML = pageHead("Profile", "Details about you that you reuse in applications and outreach.")
+      + `<div class="hub-grid">${cards.map(([key, icon, title, desc]) => `
+        <a class="card hub-card" href="#/profile/${key}">
+          <span class="hub-icon">${icon}</span>
+          <span class="hub-title">${title}</span>
+          <span class="hub-desc">${desc}</span>
+          <span class="hub-count" id="hub-${key}"></span>
+        </a>`).join("")}</div>`;
+    const count = (id, text) => { const el = $("#hub-" + id, page); if (el) el.textContent = text; };
+    const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    backend.listFiles("documents", "resumes").then((r) => count("resume", plural(r.length, "version", "versions"))).catch(() => {});
+    backend.listItems("skill").then((r) => count("skills", plural(r.length, "skill", "skills"))).catch(() => {});
+    backend.listItems("reference").then((r) => count("references", plural(r.length, "reference", "references"))).catch(() => {});
+  }
+
+  const subHead = (title, intro) =>
+    `<a class="back-link" href="#/profile">← Profile</a>${pageHead(title, intro)}`;
+
+  function renderResumePage(page) {
+    page.innerHTML = subHead("Resume", "Your resume versions and the content you draw from when tailoring them.")
+      + block("rs-versions", "Resume versions", "Keep every version. Name the file so you can tell them apart, like Product_Resume_v3.pdf.", uploadBtn)
+      + block("rs-summary", "Professional summary", "Your LinkedIn-style summary.", "")
+      + block("rs-jobs", "Work history", "Every role with all your bullet points. Pull from these when tailoring a resume.", addBtn("Add role"))
+      + block("rs-projects", "Projects", "Side projects and concepts worth listing.", addBtn("Add project"));
+    mountFiles($("#rs-versions", page), "documents", "resumes", "No resume files yet. Upload a PDF or Word file.");
+    mountNote($("#rs-summary", page), "resume_summary", "Who you are, what you do, what you're looking for...");
+    mountItems($("#rs-jobs", page), "job", {
+      empty: "No roles yet.",
+      wide: true,
+      fields: [
+        { name: "title", label: "Job title", required: true },
+        { name: "company", label: "Company", required: true },
+        { name: "location", label: "Location" },
+        { name: "dates", label: "Dates", placeholder: "e.g. June 2025 – Present" },
+        { name: "bullets", label: "Bullet points (one per line)", type: "textarea" },
+      ],
+      render: (d) => `<b>${esc(d.title)}</b>
+        <span class="item-sub">${esc([d.company, d.location, d.dates].filter(Boolean).join(" · "))}</span>
+        ${d.bullets ? `<ul class="bullets">${d.bullets.split("\n").filter((l) => l.trim()).map((l) => `<li>${esc(l.replace(/^[-•]\s*/, ""))}</li>`).join("")}</ul>` : ""}`,
+      copy: (d) => d.bullets || "",
+    });
+    mountItems($("#rs-projects", page), "project", {
+      empty: "No projects yet.",
+      fields: [
+        { name: "name", label: "Project", required: true },
+        { name: "description", label: "Description", type: "textarea" },
+        { name: "summary", label: "One-line version", placeholder: "For tight resume space" },
+      ],
+      render: (d) => `<b>${esc(d.name)}</b>
+        ${d.description ? `<span class="item-text">${esc(d.description)}</span>` : ""}
+        ${d.summary ? `<span class="item-sub">${esc(d.summary)}</span>` : ""}`,
+    });
+  }
+
+  function renderSkillsPage(page) {
+    page.innerHTML = subHead("Skills", "What you can do, and how strong you are at it.")
+      + block("pf-skills", "All skills", "Grouped by category.", addBtn("Add skill"));
+    mountItems($("#pf-skills", page), "skill", {
+      empty: "No skills yet.",
+      compact: true,
+      groupBy: (d) => d.category || "Other",
+      sort: (a, b) => a.name.localeCompare(b.name),
+      fields: [
+        { name: "name", label: "Skill", required: true, placeholder: "e.g. SQL" },
+        { name: "category", label: "Category", placeholder: "e.g. Data & Analytics" },
+        { name: "level", label: "Level (optional)", type: "select", options: [["", "Not set"], "Beginner", "Intermediate", "Advanced", "Expert"] },
+      ],
+      render: (d) => `<b>${esc(d.name)}</b>${d.level ? `<span class="item-sub">${esc(d.level)}</span>` : ""}`,
+    });
+  }
+
+  function renderReferencesPage(page) {
+    page.innerHTML = subHead("References", "People who've agreed to vouch for you.")
+      + block("pf-refs", "References", "Check with someone before listing them for a new application.", addBtn("Add reference"));
+    mountItems($("#pf-refs", page), "reference", {
+      empty: "No references yet.",
+      sort: (a, b) => a.name.localeCompare(b.name),
+      fields: [
+        { name: "name", label: "Name", required: true },
+        { name: "relationship", label: "Relationship", placeholder: "e.g. Former manager" },
+        { name: "title", label: "Job title" },
+        { name: "company", label: "Company" },
+        { name: "email", label: "Email", type: "email" },
+        { name: "phone", label: "Phone", type: "tel" },
+        { name: "notes", label: "Notes", type: "textarea", placeholder: "What they can speak to, best way to reach them" },
+      ],
+      render: (d) => `<b>${esc(d.name)}</b>
+        ${d.title ? `<span class="item-sub">${esc(d.title)}</span>` : ""}
+        ${d.relationship || d.company ? `<span class="item-sub">${esc([d.relationship, d.company].filter(Boolean).join(" · "))}</span>` : ""}
+        ${d.email ? `<a href="mailto:${esc(d.email)}" class="item-sub">${esc(d.email)}</a>` : ""}
+        ${d.phone ? `<span class="item-sub">${esc(d.phone)}</span>` : ""}
+        ${d.notes ? `<span class="item-text">${esc(d.notes)}</span>` : ""}`,
+    });
+  }
+
+  function renderResourcesPage(page) {
+    page.innerHTML = pageHead("Resources", "Tools you use during your search.")
+      + block("rs-boards", "Job boards", "Sites you check for openings.", addBtn("Add job board"))
+      + block("rs-linkedin", "LinkedIn Jobs: search strings", "Paste one into the LinkedIn Jobs search bar. Then set Location (New York, New Jersey, Los Angeles, Remote), Experience Level (Entry, Associate) and Date Posted (past week or month).", addBtn("Add search"))
+      + block("rs-templates", "Networking templates", "Messages you reuse. Copy one, then tweak it.", addBtn("Add template"))
+      + block("rs-prep", "Interview prep", "Question banks, casebooks and guides. Markdown (.md) files open in a reader.", uploadBtn);
+    mountItems($("#rs-boards", page), "jobboard", {
+      empty: "No job boards yet.",
+      sort: (a, b) => a.title.localeCompare(b.title),
+      fields: [
+        { name: "title", label: "Name", required: true, placeholder: "e.g. LinkedIn Jobs" },
+        { name: "url", label: "Link", type: "url", required: true, placeholder: "https://" },
+        { name: "note", label: "Note", placeholder: "Optional" },
+      ],
+      render: (d) => `<a href="${esc(/^https?:\/\//i.test(d.url) ? d.url : "#")}" target="_blank" rel="noopener noreferrer"><b>${esc(d.title)}</b></a>
+        <span class="item-sub">${esc(d.note || hostOf(d.url))}</span>`,
+    });
+    mountItems($("#rs-linkedin", page), "linkedin_search", {
+      empty: "No search strings yet.",
+      wide: true,
+      sort: (a, b) => Number(a.priority || 99) - Number(b.priority || 99),
+      fields: [
+        { name: "priority", label: "Priority", type: "number", placeholder: "1 = run first" },
+        { name: "name", label: "Search name", required: true, placeholder: "e.g. General APM" },
+        { name: "query", label: "Boolean string", type: "textarea", required: true },
+        { name: "why", label: "Why it's worth running", type: "textarea" },
+      ],
+      render: (d) => `<b>${d.priority ? `<span class="muted">${esc(d.priority)}.</span> ` : ""}${esc(d.name)}</b>
+        <code class="search-string">${esc(d.query)}</code>
+        ${d.why ? `<span class="item-sub">${esc(d.why)}</span>` : ""}`,
+      copy: (d) => d.query,
+    });
+    mountItems($("#rs-templates", page), "template", {
+      empty: "No templates yet. Save the outreach messages you send most.",
+      sort: (a, b) => a.title.localeCompare(b.title),
+      fields: [
+        { name: "title", label: "Title", required: true, placeholder: "e.g. Cold intro to alum" },
+        { name: "body", label: "Message", type: "textarea", required: true, placeholder: "Hi [Name], ..." },
+      ],
+      render: (d) => `<b>${esc(d.title)}</b><span class="item-text">${esc(d.body)}</span>`,
+      copy: (d) => d.body,
+    });
+    mountFiles($("#rs-prep", page), "resources", "files", "No interview prep files yet. Upload a PDF or a markdown file.", ".pdf,.doc,.docx,.md,.markdown,application/pdf,text/markdown");
+  }
+
+  function renderVisionPage(page) {
+    page.innerHTML = pageHead("Career Vision", "Where you're headed.")
+      + block("cv-dream", "Dream job", "Describe it: the role, the kind of company, what a good day looks like.", "")
+      + block("cv-road", "Career roadmap", "The steps between here and there.", addBtn("Add milestone"));
+    mountNote($("#cv-dream", page), "dream_job", "Role, industry, team size, responsibilities, location, what matters most...");
+    const rank = { "In progress": 0, Planned: 1, Done: 2 };
+    mountItems($("#cv-road", page), "milestone", {
+      empty: "No milestones yet. Add the next step.",
+      sort: (a, b) => (rank[a.status] ?? 1) - (rank[b.status] ?? 1) || (a.target || "9999").localeCompare(b.target || "9999"),
+      fields: [
+        { name: "title", label: "Milestone", required: true, placeholder: "e.g. Land a PM internship" },
+        { name: "target", label: "Target date", type: "date" },
+        { name: "status", label: "Status", type: "select", options: ["Planned", "In progress", "Done"] },
+        { name: "details", label: "Details", type: "textarea" },
+      ],
+      render: (d) => `<b>${esc(d.title)}</b>
+        <span class="item-sub"><span class="badge ${d.status === "Done" ? "yes" : d.status === "In progress" ? "solid" : ""}">${esc(d.status || "Planned")}</span>${d.target ? " " + esc(fmtDate(d.target)) : ""}</span>
+        ${d.details ? `<span class="item-text">${esc(d.details)}</span>` : ""}`,
+    });
   }
 
   function renderExportPage(page) {
@@ -1916,7 +2227,7 @@
   function renderNotConfigured() {
     root.innerHTML = `
       <div class="auth"><div class="card auth-card">
-        <span class="brand"><span class="brand-mark">${I.logo()}</span>Jobstack</span>
+        <span class="brand"><span class="brand-mark">${I.logo()}</span>Job Central</span>
         <h1>Almost ready</h1>
         <p class="muted">This app isn't connected to its database yet. To try it with sample data, open <a href="?demo#/">demo mode</a>.</p>
       </div></div>`;
@@ -1925,7 +2236,7 @@
   function renderLogin() {
     root.innerHTML = `
       <div class="auth"><form class="card auth-card" id="login">
-        <span class="brand"><span class="brand-mark">${I.logo()}</span>Jobstack</span>
+        <span class="brand"><span class="brand-mark">${I.logo()}</span>Job Central</span>
         <h1>Sign in</h1>
         <div class="field"><label for="email">Email</label><input id="email" type="email" autocomplete="username" required></div>
         <div class="field"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" required></div>
@@ -1965,8 +2276,12 @@
     if (h === "/new-application") return { page: appUnder, panel: "app-edit" };
     if (h === "/contacts") return { page: "contacts" };
     if (h === "/applications") return { page: "applications" };
-    if (h === "/tags") return { page: "tags" };
+    if (h === "/tags") return { page: "contacts" };
     if (h === "/resources") return { page: "resources" };
+    if (h === "/documents") return { page: "documents" };
+    if (h === "/profile") return { page: "profile" };
+    if ((m = h.match(/^\/profile\/(resume|skills|references)$/))) return { page: "profile", sub: m[1] };
+    if (h === "/vision") return { page: "vision" };
     if (h === "/export") return { page: "export" };
     if (h === "/settings") return { page: "settings" };
     return { page: "dashboard" };
