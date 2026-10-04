@@ -23,6 +23,8 @@
     logOpen: false,
     outreach: [],
     outreachEdit: null,
+    outreachGroups: [],
+    outreachPeople: null,
     loaded: false,
     route: { page: "contacts" },
     importPlan: null,
@@ -831,20 +833,32 @@
 
   // ---------- outreach log (per application) ----------
 
-  const OUTREACH_GROUPS = ["active", "no_response", "direct"];
-  const outreachTitle = (key, a) => (key === "active" ? "Warm Outreach — Active Support"
-    : key === "no_response" ? "Warm Outreach — No Response Yet" : `Direct Outreach to ${a.company || "Company"} Team`);
-  const outreachOf = (appId, group) => state.outreach.filter((o) => o.application_id === appId && (!group || o.group_key === group))
-    .sort((x, y) => (x.sort_order - y.sort_order) || String(x.created_at).localeCompare(String(y.created_at)));
+  const bySort = (x, y) => (x.sort_order - y.sort_order) || String(x.created_at).localeCompare(String(y.created_at));
+  const groupsOf = (appId) => state.outreachGroups.filter((g) => g.application_id === appId).sort(bySort);
+  const outreachOf = (appId, groupId) => state.outreach.filter((o) => o.application_id === appId && (!groupId || o.group_id === groupId)).sort(bySort);
   const outreachLine = (o) => `${o.name}${o.title_company ? ` (${o.title_company})` : ""}${o.update_text ? ` — ${o.update_text}` : ""}`;
-  // The three groups as plain text, for copying or the CSV. Empty when nothing is logged and `blankIfEmpty`.
-  function outreachText(a, blankIfEmpty) {
-    if (blankIfEmpty && !outreachOf(a.id).length) return "";
-    return OUTREACH_GROUPS.map((g) => {
-      const list = outreachOf(a.id, g);
-      return outreachTitle(g, a) + "\n" + (list.length ? list.map((o) => "- " + outreachLine(o)).join("\n") : "Nothing logged yet");
+  // The groups as plain text (used by the CSV). Empty when nothing is logged.
+  function outreachText(a) {
+    if (!outreachOf(a.id).length) return "";
+    return groupsOf(a.id).map((g) => {
+      const list = outreachOf(a.id, g.id);
+      return g.name + "\n" + (list.length ? list.map((o) => "- " + outreachLine(o)).join("\n") : "Nothing logged yet");
     }).join("\n\n");
   }
+
+  const COMPANY_NOISE = new Set(["inc", "llc", "ltd", "corp", "corporation", "co", "company", "the", "group", "plc"]);
+  const companyWords = (s) => (s || "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").split(" ")
+    .filter((w) => w && !COMPANY_NOISE.has(w));
+  // Same company if the names match once punctuation and suffixes like "Inc" are ignored,
+  // or one name is the other plus extra words ("Google" / "Google Cloud").
+  function sameCompany(x, y) {
+    const a = companyWords(x), b = companyWords(y);
+    if (!a.length || !b.length) return false;
+    const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+    return short.every((w, i) => w === long[i]);
+  }
+  // People in the Contacts tracker who work at this application's company.
+  const peopleAt = (a) => state.contacts.filter((c) => sameCompany(c.company, a.company)).sort((x, y) => fullName(x).localeCompare(fullName(y)));
 
   // Status is To Start / Completed; the stage shown is derived from the dates.
   function stageOf(a) {
@@ -900,7 +914,7 @@
       "Interview Dates", "Rejection Date", "Resume", "Resume File", "Notes", "Cover Letter", "Questions", "Outreach"];
     downloadCsv(`applications-${todayISO()}.csv`, header, list.map(({ a, st }) => [
       a.position_title, a.company, a.location, a.job_url, a.status === "completed" ? "Completed" : "To Start", st.label,
-      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, resumeLabel(a), a.resume_file_name, a.notes, a.cover_letter, questionsText(a), outreachText(a, true),
+      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, resumeLabel(a), a.resume_file_name, a.notes, a.cover_letter, questionsText(a), outreachText(a),
     ]));
   }
 
@@ -1136,7 +1150,8 @@
       loadPrep();
     });
     loadPrep();
-    // Outreach log: three groups of plain-text entries, edited inline.
+    // Outreach log: your own groups of plain-text entries, edited inline.
+    state.outreachPeople = null; // the list starts hidden each time the application is opened
     const outBox = $("#out-box", el);
     const autogrowTa = (ta) => {
       const fit = () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + 2 + "px"; };
@@ -1145,69 +1160,111 @@
     };
     const renderOutreach = () => {
       const ed = state.outreachEdit && state.outreachEdit.appId === a.id ? state.outreachEdit : null;
-      const form = (o, group) => `
-        <form class="log-form out-form" data-out-form>
-          <div class="field wide"><label>Name</label><input name="name" required value="${esc(o ? o.name : "")}"></div>
-          <div class="field wide"><label>Title / Company (optional)</label><input name="title_company" value="${esc(o ? o.title_company : "")}"></div>
+      const groups = groupsOf(a.id);
+      const entryForm = (o, groupId, prefill) => `
+        <form class="log-form out-form" data-out-form="entry">
+          <div class="field wide"><label>Name</label><input name="name" required value="${esc(o ? o.name : prefill ? prefill.name : "")}"></div>
+          <div class="field wide"><label>Title / Company (optional)</label><input name="title_company" value="${esc(o ? o.title_company : prefill ? prefill.title_company : "")}"></div>
           <div class="field wide"><label>Update</label><textarea name="update_text" class="autogrow" rows="2" placeholder="e.g. email sent 5/5; LinkedIn connected; replied">${esc(o ? o.update_text : "")}</textarea></div>
-          <div class="field wide"><label>Group</label><select name="group_key">${options(OUTREACH_GROUPS.map((g) => [g, outreachTitle(g, a)]), group)}</select></div>
+          <div class="field wide"><label>Group</label><select name="group_id">${options(groups.map((g) => [g.id, g.name]), groupId)}</select></div>
           <div class="btns">${o ? `<button type="button" class="btn ghost danger-text" data-out-delete="${esc(o.id)}">Delete</button><span class="grow"></span>` : ""}
             <button type="button" class="btn ghost" data-out-cancel>Cancel</button><button class="btn primary" type="submit">Save</button></div>
         </form>`;
-      outBox.innerHTML = `<div class="doc-actions"><button class="btn" type="button" id="out-copy">${I.copy(14)} Copy outreach</button></div>`
-        + OUTREACH_GROUPS.map((g) => {
-          const list = outreachOf(a.id, g);
-          const adding = ed && !ed.id && ed.group === g;
-          return `<div class="out-group"><h4>${esc(outreachTitle(g, a))}</h4>
-            ${list.length || adding ? `<ul class="out-list">${list.map((o, i) => ed && ed.id === o.id ? `<li class="editing">${form(o, g)}</li>` : `
-              <li><div class="out-main" role="button" tabindex="0" data-out-edit="${esc(o.id)}" title="Click to edit">
-                  <span class="out-line"><b>${esc(o.name)}</b>${o.title_company ? ` (${esc(o.title_company)})` : ""}${o.update_text ? ` — ${esc(o.update_text)}` : ""}</span>
-                  <span class="out-date">Updated ${esc(fmtDate((o.updated_at || o.created_at || "").slice(0, 10)))}</span></div>
-                <div class="out-move">
-                  <button type="button" class="icon-btn out-up" data-out-move="${esc(o.id)}:-1" aria-label="Move up"${i === 0 ? " disabled" : ""}>${I.chevron(14)}</button>
-                  <button type="button" class="icon-btn" data-out-move="${esc(o.id)}:1" aria-label="Move down"${i === list.length - 1 ? " disabled" : ""}>${I.chevron(14)}</button></div></li>`).join("")}
-              ${adding ? `<li class="editing">${form(null, g)}</li>` : ""}</ul>` : `<span class="muted">Nothing logged yet</span>`}
-            ${adding ? "" : `<div><button type="button" class="btn ghost" data-out-add="${g}">+ Add</button></div>`}</div>`;
-        }).join("");
+      const groupForm = (g, empty) => `
+        <form class="out-gform" data-out-form="group">
+          <input name="name" required placeholder="${empty ? "Enter group name here" : "Group name"}" aria-label="Group name" value="${esc(g ? g.name : "")}">
+          ${empty ? "" : `<button type="button" class="btn ghost" data-out-cancel>Cancel</button>`}<button class="btn primary" type="submit">${empty ? "+ Add" : "Save"}</button>
+        </form>`;
+      const iconBtn = (attr, label, icon, extra = "") => `<button type="button" class="icon-btn ${extra}" ${attr} aria-label="${label}" title="${label}">${icon}</button>`;
+      const groupHtml = (g, gi) => {
+        const list = outreachOf(a.id, g.id);
+        const adding = ed && ed.type === "entry" && !ed.id && ed.group === g.id;
+        const renaming = ed && ed.type === "group" && ed.id === g.id;
+        return `<div class="out-group">
+          ${renaming ? groupForm(g) : `<div class="out-ghead"><h4>${esc(g.name)}</h4><span class="out-gtools">
+            ${iconBtn(`data-out-grename="${esc(g.id)}"`, "Rename group", I.pencil(14))}
+            ${iconBtn(`data-out-gmove="${esc(g.id)}:-1"${gi === 0 ? " disabled" : ""}`, "Move group up", I.chevron(14), "out-up")}
+            ${iconBtn(`data-out-gmove="${esc(g.id)}:1"${gi === groups.length - 1 ? " disabled" : ""}`, "Move group down", I.chevron(14))}
+            ${iconBtn(`data-out-gdelete="${esc(g.id)}"`, "Delete group", I.trash(14))}</span></div>`}
+          ${list.length || adding ? `<ul class="out-list">${list.map((o, i) => ed && ed.type === "entry" && ed.id === o.id ? `<li class="editing">${entryForm(o, g.id)}</li>` : `
+            <li><div class="out-main" role="button" tabindex="0" data-out-edit="${esc(o.id)}" title="Click to edit">
+                <span class="out-line"><b>${esc(o.name)}</b>${o.title_company ? ` (${esc(o.title_company)})` : ""}${o.update_text ? ` — ${esc(o.update_text)}` : ""}</span>
+                <span class="out-date">Updated ${esc(fmtDate((o.updated_at || o.created_at || "").slice(0, 10)))}</span></div>
+              <div class="out-move">
+                ${iconBtn(`data-out-move="${esc(o.id)}:-1"${i === 0 ? " disabled" : ""}`, "Move up", I.chevron(14), "out-up")}
+                ${iconBtn(`data-out-move="${esc(o.id)}:1"${i === list.length - 1 ? " disabled" : ""}`, "Move down", I.chevron(14))}</div></li>`).join("")}
+            ${adding ? `<li class="editing">${entryForm(null, g.id, ed.prefill)}</li>` : ""}</ul>` : `<span class="muted">Nothing logged yet</span>`}
+          ${adding ? "" : `<div><button type="button" class="btn ghost" data-out-add="${esc(g.id)}">+ Add</button></div>`}</div>`;
+      };
+      const people = a.company ? peopleAt(a) : [];
+      const added = new Set(outreachOf(a.id).map((o) => o.name.trim().toLowerCase()));
+      const peopleHtml = state.outreachPeople === a.id ? `<div class="out-people">${people.length ? people.map((c) => `
+          <div class="out-person"><div class="out-who"><b>${esc(fullName(c))}</b><span class="muted small">${esc([c.job_title, c.location].filter(Boolean).join(" · "))}</span></div>
+            ${added.has(fullName(c).toLowerCase()) ? `<span class="badge">In log</span>`
+              : groups.length ? `<button type="button" class="btn" data-out-person="${esc(c.id)}">+ Add</button>` : ""}</div>`).join("")
+          + (groups.length ? "" : `<span class="muted small">Create a group below to add people to the log.</span>`)
+          : `<span class="muted">No one at ${esc(a.company)} in your Contacts yet.</span>`}</div>` : "";
+      const newGroup = ed && ed.type === "newgroup";
+      outBox.innerHTML = (a.company ? `<div class="doc-actions"><button class="btn" type="button" id="out-people" aria-expanded="${state.outreachPeople === a.id}">People you know at ${esc(a.company)}</button></div>` : "")
+        + peopleHtml
+        + (groups.length ? groups.map(groupHtml).join("") : groupForm(null, true))
+        + (!groups.length ? "" : newGroup ? groupForm(null)
+          : `<div class="doc-actions"><button type="button" class="btn ghost" data-out-gadd>+ Add group</button></div>`);
       $$("textarea.autogrow", outBox).forEach(autogrowTa);
       const first = $("[data-out-form] input", outBox);
-      if (first) first.focus();
+      if (first && ed) first.focus();
     };
     const editOutreach = (v) => { state.outreachEdit = v && { appId: a.id, ...v }; renderOutreach(); };
+    // Move one item up/down in its list: renumber, save what changed, undo on failure.
+    const moveInList = async (list, id, dir, save) => {
+      const i = list.findIndex((x) => x.id === id), j = i + dir;
+      if (i < 0 || j < 0 || j >= list.length) return;
+      [list[i], list[j]] = [list[j], list[i]];
+      const before = new Map(list.map((x) => [x.id, x.sort_order]));
+      const changed = [];
+      list.forEach((x, n) => { if (x.sort_order !== n) { x.sort_order = n; changed.push({ id: x.id, sort_order: n }); } });
+      renderOutreach();
+      try { await run(() => save(changed)); } catch (err) {
+        list.forEach((x) => { x.sort_order = before.get(x.id); });
+        renderOutreach();
+      }
+    };
+    const nextOrder = (list) => list.reduce((m, x) => Math.max(m, x.sort_order + 1), 0);
     outBox.addEventListener("click", async (e) => {
       const t = e.target.closest("button, [data-out-edit]");
       if (!t || !outBox.contains(t)) return;
-      if (t.id === "out-copy") {
-        try { await navigator.clipboard.writeText(outreachText(a)); } catch (err) { /* clipboard blocked */ }
-        const label = t.innerHTML;
-        t.innerHTML = I.check(14) + " Copied";
-        setTimeout(() => { t.innerHTML = label; }, 1500);
-      } else if (t.dataset.outAdd) editOutreach({ id: null, group: t.dataset.outAdd });
-      else if (t.dataset.outEdit) {
-        const o = state.outreach.find((x) => x.id === t.dataset.outEdit);
-        editOutreach({ id: o.id, group: o.group_key });
-      } else if ("outCancel" in t.dataset) editOutreach(null);
-      else if (t.dataset.outDelete) {
-        const o = state.outreach.find((x) => x.id === t.dataset.outDelete);
+      const d = t.dataset;
+      if (t.id === "out-people") { state.outreachPeople = state.outreachPeople === a.id ? null : a.id; renderOutreach(); }
+      else if (d.outPerson) {
+        const c = state.contacts.find((x) => x.id === d.outPerson);
+        const tc = [c.job_title, c.company].filter(Boolean).join(", ");
+        editOutreach({ type: "entry", id: null, group: groupsOf(a.id)[0].id, prefill: { name: fullName(c), title_company: tc } });
+      } else if (d.outAdd) editOutreach({ type: "entry", id: null, group: d.outAdd });
+      else if (d.outEdit) editOutreach({ type: "entry", id: d.outEdit, group: state.outreach.find((x) => x.id === d.outEdit).group_id });
+      else if ("outCancel" in d) editOutreach(null);
+      else if (d.outDelete) {
+        const o = state.outreach.find((x) => x.id === d.outDelete);
         if (!confirm(`Delete ${o.name} from this outreach log?`)) return;
         await run(() => backend.deleteOutreach(o.id), t.closest("form"));
         state.outreach = state.outreach.filter((x) => x.id !== o.id);
         editOutreach(null);
-      } else if (t.dataset.outMove) {
-        const [id, dir] = t.dataset.outMove.split(":");
-        const group = state.outreach.find((x) => x.id === id).group_key;
-        const list = outreachOf(a.id, group);
-        const i = list.findIndex((x) => x.id === id), j = i + Number(dir);
-        if (j < 0 || j >= list.length) return;
-        [list[i], list[j]] = [list[j], list[i]];
-        const before = new Map(list.map((x) => [x.id, x.sort_order]));
-        const changed = [];
-        list.forEach((x, n) => { if (x.sort_order !== n) { x.sort_order = n; changed.push({ id: x.id, sort_order: n }); } });
-        renderOutreach();
-        try { await run(() => backend.reorderOutreach(changed)); } catch (err) {
-          list.forEach((x) => { x.sort_order = before.get(x.id); });
-          renderOutreach();
-        }
+      } else if (d.outMove) {
+        const [id, dir] = d.outMove.split(":");
+        const groupId = state.outreach.find((x) => x.id === id).group_id;
+        moveInList(outreachOf(a.id, groupId), id, Number(dir), (c) => backend.reorderOutreach(c));
+      } else if ("outGadd" in d) editOutreach({ type: "newgroup" });
+      else if (d.outGrename) editOutreach({ type: "group", id: d.outGrename });
+      else if (d.outGmove) {
+        const [id, dir] = d.outGmove.split(":");
+        moveInList(groupsOf(a.id), id, Number(dir), (c) => backend.reorderOutreachGroups(c));
+      } else if (d.outGdelete) {
+        const g = state.outreachGroups.find((x) => x.id === d.outGdelete);
+        const n = outreachOf(a.id, g.id).length;
+        if (!confirm(n ? `Delete "${g.name}" and its ${n} ${n === 1 ? "entry" : "entries"}?` : `Delete the group "${g.name}"?`)) return;
+        await run(() => backend.deleteOutreachGroup(g.id));
+        state.outreachGroups = state.outreachGroups.filter((x) => x.id !== g.id);
+        state.outreach = state.outreach.filter((x) => x.group_id !== g.id);
+        editOutreach(null);
       }
     });
     outBox.addEventListener("keydown", (e) => {
@@ -1217,14 +1274,24 @@
     outBox.addEventListener("submit", async (e) => {
       e.preventDefault();
       const f = e.target;
-      const ed = state.outreachEdit;
+      const ed = state.outreachEdit || {};
+      if (f.dataset.outForm === "group") {
+        const name = f.name.value.trim();
+        if (!name) return;
+        const existing = ed.id ? state.outreachGroups.find((x) => x.id === ed.id) : null;
+        const saved = await run(() => backend.saveOutreachGroup({ id: existing && existing.id, application_id: a.id, name,
+          sort_order: existing ? existing.sort_order : nextOrder(groupsOf(a.id)) }), f);
+        if (existing) Object.assign(existing, saved); else state.outreachGroups.push(saved);
+        editOutreach(null);
+        return;
+      }
       const existing = ed.id ? state.outreach.find((x) => x.id === ed.id) : null;
-      const group = f.group_key.value;
-      const row = { application_id: a.id, group_key: group, name: f.name.value.trim(), title_company: f.title_company.value.trim(),
+      const groupId = f.group_id.value;
+      const row = { application_id: a.id, group_id: groupId, name: f.name.value.trim(), title_company: f.title_company.value.trim(),
         update_text: f.update_text.value.trim() };
       if (!row.name) return;
       if (existing) row.id = existing.id;
-      if (!existing || existing.group_key !== group) row.sort_order = outreachOf(a.id, group).reduce((m, x) => Math.max(m, x.sort_order + 1), 0);
+      if (!existing || existing.group_id !== groupId) row.sort_order = nextOrder(outreachOf(a.id, groupId));
       const saved = await run(() => backend.saveOutreach(row), f);
       if (existing) Object.assign(existing, saved); else state.outreach.push(saved);
       editOutreach(null);
@@ -1426,6 +1493,7 @@
         await run(() => backend.deleteApplication(existing.id), el);
         state.applications = state.applications.filter((x) => x.id !== existing.id);
         state.outreach = state.outreach.filter((o) => o.application_id !== existing.id);
+        state.outreachGroups = state.outreachGroups.filter((g) => g.application_id !== existing.id);
         state.flash = "Application deleted.";
         location.hash = baseHash();
       });
@@ -1608,7 +1676,7 @@
           } catch (err) { /* shown */ }
         });
         const first = formEl.elements[0];
-        if (first) first.focus();
+        if (first && ed) first.focus();
       }
       $$("[data-edit]", body).forEach((b) => b.addEventListener("click", () => { editing = b.dataset.edit; draw(); }));
       $$("[data-del]", body).forEach((b) => b.addEventListener("click", async () => {

@@ -493,3 +493,13 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .out-up svg { transform: rotate(180deg); }
 .out-form .btns .grow { flex: 1; }
 .out-form .danger-text { color: #e5484d; }
+.out-ghead { display: flex; align-items: center; gap: 8px; }
+.out-ghead h4 { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.out-gtools { display: flex; }
+.out-gtools .icon-btn { width: 26px; height: 26px; border-color: transparent; }
+.out-gtools .icon-btn:disabled { opacity: .3; cursor: default; }
+.out-gform { display: flex; gap: 8px; align-items: center; }
+.out-gform input { flex: 1; min-width: 0; height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--card); }
+.out-people { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.out-person { display: flex; align-items: center; gap: 10px; }
+.out-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }

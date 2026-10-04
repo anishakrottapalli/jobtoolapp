@@ -15,7 +15,7 @@
     "interview_dates", "resume_track", "notes", "resume_text", "cover_letter", "application_answers",
     "questions", "resume_tailored", "resume_file_path", "resume_file_name",
   ];
-  const OUTREACH_FIELDS = ["application_id", "group_key", "name", "title_company", "update_text", "sort_order"];
+  const OUTREACH_FIELDS = ["application_id", "group_id", "name", "title_company", "update_text", "sort_order"];
   const safeFileName = (name) => name.replace(/[^\w.\-]+/g, "_").slice(-120);
 
   function pick(obj, fields) {
@@ -67,14 +67,15 @@
             if (page.length < 1000) return out;
           }
         };
-        const [contacts, interactions, applications, outreach] = await Promise.all([
+        const [contacts, interactions, applications, outreach, outreachGroups] = await Promise.all([
           fetchAll("contacts", "created_at"),
           fetchAll("interactions", "happened_on"),
           // Tolerate a database that hasn't had the applications migration yet.
           fetchAll("applications", "created_at").catch(() => []),
           fetchAll("application_outreach", "created_at").catch(() => []),
+          fetchAll("application_outreach_groups", "created_at").catch(() => []),
         ]);
-        return { contacts, interactions, applications, outreach };
+        return { contacts, interactions, applications, outreach, outreachGroups };
       },
       async saveApplication(a) {
         const row = pick(a, APPLICATION_FIELDS);
@@ -106,6 +107,18 @@
       },
       async reorderOutreach(list) {
         await Promise.all(list.map((o) => sb.from("application_outreach").update({ sort_order: o.sort_order }).eq("id", o.id).then(check)));
+      },
+      async saveOutreachGroup(g) {
+        const row = { application_id: g.application_id, name: g.name, sort_order: g.sort_order };
+        if (g.id) return check(await sb.from("application_outreach_groups").update(row).eq("id", g.id).select().single());
+        return check(await sb.from("application_outreach_groups").insert(row).select().single());
+      },
+      // Deleting a group also deletes its entries (the database cascades).
+      async deleteOutreachGroup(id) {
+        check(await sb.from("application_outreach_groups").delete().eq("id", id));
+      },
+      async reorderOutreachGroups(list) {
+        await Promise.all(list.map((g) => sb.from("application_outreach_groups").update({ sort_order: g.sort_order }).eq("id", g.id).then(check)));
       },
       // Emails from the Jobs folder matched to an application (see 008_application_emails.sql).
       async listApplicationEmails(appId) {
@@ -175,7 +188,7 @@
     function load() {
       try {
         const saved = JSON.parse(localStorage.getItem(KEY));
-        if (saved && saved.contacts) return { applications: sampleData().applications, outreach: [], ...saved };
+        if (saved && saved.contacts) return { applications: sampleData().applications, outreach: [], outreachGroups: [], ...saved };
       } catch (e) { /* fall through to sample data */ }
       return sampleData();
     }
@@ -186,7 +199,7 @@
     }
 
     function sampleData() {
-      const a = uid(), b = uid(), c = uid(), app1 = uid();
+      const a = uid(), b = uid(), c = uid(), app1 = uid(), g1 = uid(), g2 = uid();
       const blank = { middle_name: "", location: "", linkedin_url: "", linkedin_status: "none", phone: "", referred_by: "",
         event_met_at: "", notes: "", work_email: "", personal_email: "",
         personal_email_status: "unchecked", work_email_status: "unchecked", tags: [] };
@@ -223,10 +236,14 @@
             job_url: "", status: "to_start", date_applied: null, rejection_date: null,
             interview_dates: [], resume_track: null, notes: "", created_at: now() },
         ],
+        outreachGroups: [
+          { id: g1, application_id: app1, name: "Warm outreach", sort_order: 0, created_at: now() },
+          { id: g2, application_id: app1, name: "Direct outreach to Acme Corp team", sort_order: 1, created_at: now() },
+        ],
         outreach: [
-          { id: uid(), application_id: app1, group_key: "active", name: "Priya Shah", title_company: "Engineering Manager, Acme Corp",
+          { id: uid(), application_id: app1, group_id: g1, name: "Priya Shah", title_company: "Engineering Manager, Acme Corp",
             update_text: "referral submitted and confirmed", sort_order: 0, created_at: now(), updated_at: now() },
-          { id: uid(), application_id: app1, group_key: "direct", name: "Dana Lee", title_company: "Hiring Manager",
+          { id: uid(), application_id: app1, group_id: g2, name: "Dana Lee", title_company: "Hiring Manager",
             update_text: "email sent 9/3; LinkedIn connected", sort_order: 0, created_at: now(), updated_at: now() },
         ],
       };
@@ -244,7 +261,7 @@
       async registerSyncToken() { throw new Error("Gmail sync isn't available in demo mode."); },
       async disconnectSync() {},
       async loadAll() {
-        return JSON.parse(JSON.stringify({ contacts: state.contacts, interactions: state.interactions, applications: state.applications, outreach: state.outreach || [] }));
+        return JSON.parse(JSON.stringify({ contacts: state.contacts, interactions: state.interactions, applications: state.applications, outreach: state.outreach || [], outreachGroups: state.outreachGroups || [] }));
       },
       async saveApplication(a) {
         const row = pick(a, APPLICATION_FIELDS);
@@ -262,6 +279,7 @@
       async deleteApplication(id) {
         state.applications = state.applications.filter((x) => x.id !== id);
         state.outreach = (state.outreach || []).filter((x) => x.application_id !== id);
+        state.outreachGroups = (state.outreachGroups || []).filter((x) => x.application_id !== id);
         persist();
       },
       async saveOutreach(o) {
@@ -269,7 +287,7 @@
         state.outreach = state.outreach || [];
         if (o.id) {
           const existing = state.outreach.find((x) => x.id === o.id);
-          const changed = ["group_key", "name", "title_company", "update_text"].some((k) => k in row && row[k] !== existing[k]);
+          const changed = ["group_id", "name", "title_company", "update_text"].some((k) => k in row && row[k] !== existing[k]);
           Object.assign(existing, row, changed ? { updated_at: now() } : {});
           persist();
           return { ...existing };
@@ -285,6 +303,28 @@
       },
       async reorderOutreach(list) {
         for (const o of list) Object.assign(state.outreach.find((x) => x.id === o.id), { sort_order: o.sort_order });
+        persist();
+      },
+      async saveOutreachGroup(g) {
+        state.outreachGroups = state.outreachGroups || [];
+        if (g.id) {
+          const existing = state.outreachGroups.find((x) => x.id === g.id);
+          Object.assign(existing, { name: g.name, sort_order: g.sort_order });
+          persist();
+          return { ...existing };
+        }
+        const created = { id: uid(), application_id: g.application_id, name: g.name, sort_order: g.sort_order, created_at: now() };
+        state.outreachGroups.push(created);
+        persist();
+        return { ...created };
+      },
+      async deleteOutreachGroup(id) {
+        state.outreachGroups = (state.outreachGroups || []).filter((x) => x.id !== id);
+        state.outreach = (state.outreach || []).filter((x) => x.group_id !== id);
+        persist();
+      },
+      async reorderOutreachGroups(list) {
+        for (const g of list) Object.assign(state.outreachGroups.find((x) => x.id === g.id), { sort_order: g.sort_order });
         persist();
       },
       async listApplicationEmails() { return []; },
