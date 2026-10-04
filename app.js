@@ -25,7 +25,7 @@
     route: { page: "contacts" },
     importPlan: null,
     applications: [],
-    appFilters: { q: "", stage: "inplay", track: "" },
+    appFilters: { q: "", stage: "all", track: "" },
     appSort: { key: "date_applied", dir: -1 },
     appAction: null,
   };
