@@ -15,7 +15,7 @@
     "interview_dates", "resume_track", "notes", "resume_text", "cover_letter", "application_answers",
     "questions", "resume_tailored", "resume_file_path", "resume_file_name",
   ];
-  const OUTREACH_FIELDS = ["application_id", "group_id", "name", "title_company", "update_text", "sort_order"];
+  const OUTREACH_FIELDS = ["application_id", "group_id", "contact_id", "name", "title_company", "update_text", "sort_order"];
   const safeFileName = (name) => name.replace(/[^\w.\-]+/g, "_").slice(-120);
 
   function pick(obj, fields) {

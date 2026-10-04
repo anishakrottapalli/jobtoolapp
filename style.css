@@ -503,3 +503,8 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .out-people { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
 .out-person { display: flex; align-items: center; gap: 10px; }
 .out-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.out-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; font-size: 12px; }
+.out-actions a, .linkbtn { color: var(--link); background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+.out-actions a:hover, .linkbtn:hover { text-decoration: underline; }
+.out-hform { margin-top: 8px; }
+.out-form .choice { flex-direction: row; align-items: center; gap: 8px; color: var(--fg-2); }

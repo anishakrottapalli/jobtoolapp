@@ -25,6 +25,7 @@
     outreachEdit: null,
     outreachGroups: [],
     outreachPeople: null,
+    contactDraft: null,
     loaded: false,
     route: { page: "contacts" },
     importPlan: null,
@@ -1152,6 +1153,7 @@
     loadPrep();
     // Outreach log: your own groups of plain-text entries, edited inline.
     state.outreachPeople = null; // the list starts hidden each time the application is opened
+    state.outreachLogged = null;
     const outBox = $("#out-box", el);
     const autogrowTa = (ta) => {
       const fit = () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + 2 + "px"; };
@@ -1161,12 +1163,13 @@
     const renderOutreach = () => {
       const ed = state.outreachEdit && state.outreachEdit.appId === a.id ? state.outreachEdit : null;
       const groups = groupsOf(a.id);
-      const entryForm = (o, groupId, prefill) => `
+      const entryForm = (o, groupId, prefill, contactId) => `
         <form class="log-form out-form" data-out-form="entry">
           <div class="field wide"><label>Name</label><input name="name" required value="${esc(o ? o.name : prefill ? prefill.name : "")}"></div>
           <div class="field wide"><label>Title / Company (optional)</label><input name="title_company" value="${esc(o ? o.title_company : prefill ? prefill.title_company : "")}"></div>
           <div class="field wide"><label>Update</label><textarea name="update_text" class="autogrow" rows="2" placeholder="e.g. email sent 5/5; LinkedIn connected; replied">${esc(o ? o.update_text : "")}</textarea></div>
           <div class="field wide"><label>Group</label><select name="group_id">${options(groups.map((g) => [g.id, g.name]), groupId)}</select></div>
+          ${o || contactId ? "" : `<label class="field choice"><input type="checkbox" name="to_contacts"> Also add to my Contacts</label>`}
           <div class="btns">${o ? `<button type="button" class="btn ghost danger-text" data-out-delete="${esc(o.id)}">Delete</button><span class="grow"></span>` : ""}
             <button type="button" class="btn ghost" data-out-cancel>Cancel</button><button class="btn primary" type="submit">Save</button></div>
         </form>`;
@@ -1176,6 +1179,22 @@
           ${empty ? "" : `<button type="button" class="btn ghost" data-out-cancel>Cancel</button>`}<button class="btn primary" type="submit">${empty ? "+ Add" : "Save"}</button>
         </form>`;
       const iconBtn = (attr, label, icon, extra = "") => `<button type="button" class="icon-btn ${extra}" ${attr} aria-label="${label}" title="${label}">${icon}</button>`;
+      // Under each entry: link to its contact and log to their history, or save it to Contacts.
+      const outActions = (o) => {
+        const c = o.contact_id && state.contacts.find((x) => x.id === o.contact_id);
+        if (c && ed && ed.type === "history" && ed.id === o.id) return `
+          <form class="log-form out-hform" data-out-form="history">
+            <div class="field wide"><label>Log to ${esc(fullName(c))}'s history</label>
+              <select name="kind">${options([["outreach", "I reached out"], ["reply", "They replied"]])}</select></div>
+            <div class="field"><label>Date</label><input name="happened_on" type="date" required value="${todayISO()}" max="${todayISO()}"></div>
+            <div class="field"><label>How</label><select name="method">${options(METHODS)}</select></div>
+            <div class="field wide"><label>Note (optional)</label><input name="note" value="${esc(`Re: ${a.position_title}${a.company ? " at " + a.company : ""}`)}"></div>
+            <div class="btns"><button type="button" class="btn ghost" data-out-cancel>Cancel</button><button class="btn primary" type="submit">Add to history</button></div>
+          </form>`;
+        return `<div class="out-actions">${c
+          ? `<a href="#/contact/${esc(c.id)}">View contact</a><button type="button" class="linkbtn" data-out-hist="${esc(o.id)}">Log to contact history</button>${state.outreachLogged === o.id ? `<span class="muted small">Logged ✓</span>` : ""}`
+          : `<span class="muted small">Not in Contacts</span><button type="button" class="linkbtn" data-out-save="${esc(o.id)}">Save to Contacts</button>`}</div>`;
+      };
       const groupHtml = (g, gi) => {
         const list = outreachOf(a.id, g.id);
         const adding = ed && ed.type === "entry" && !ed.id && ed.group === g.id;
@@ -1192,15 +1211,17 @@
                 <span class="out-date">Updated ${esc(fmtDate((o.updated_at || o.created_at || "").slice(0, 10)))}</span></div>
               <div class="out-move">
                 ${iconBtn(`data-out-move="${esc(o.id)}:-1"${i === 0 ? " disabled" : ""}`, "Move up", I.chevron(14), "out-up")}
-                ${iconBtn(`data-out-move="${esc(o.id)}:1"${i === list.length - 1 ? " disabled" : ""}`, "Move down", I.chevron(14))}</div></li>`).join("")}
-            ${adding ? `<li class="editing">${entryForm(null, g.id, ed.prefill)}</li>` : ""}</ul>` : `<span class="muted">Nothing logged yet</span>`}
+                ${iconBtn(`data-out-move="${esc(o.id)}:1"${i === list.length - 1 ? " disabled" : ""}`, "Move down", I.chevron(14))}</div>
+              ${outActions(o)}</li>`).join("")}
+            ${adding ? `<li class="editing">${entryForm(null, g.id, ed.prefill, ed.contactId)}</li>` : ""}</ul>` : `<span class="muted">Nothing logged yet</span>`}
           ${adding ? "" : `<div><button type="button" class="btn ghost" data-out-add="${esc(g.id)}">+ Add</button></div>`}</div>`;
       };
       const people = a.company ? peopleAt(a) : [];
       const added = new Set(outreachOf(a.id).map((o) => o.name.trim().toLowerCase()));
+      const linked = new Set(outreachOf(a.id).map((o) => o.contact_id).filter(Boolean));
       const peopleHtml = state.outreachPeople === a.id ? `<div class="out-people">${people.length ? people.map((c) => `
           <div class="out-person"><div class="out-who"><b>${esc(fullName(c))}</b><span class="muted small">${esc([c.job_title, c.location].filter(Boolean).join(" · "))}</span></div>
-            ${added.has(fullName(c).toLowerCase()) ? `<span class="badge">In log</span>`
+            ${linked.has(c.id) || added.has(fullName(c).toLowerCase()) ? `<span class="badge">In log</span>`
               : groups.length ? `<button type="button" class="btn" data-out-person="${esc(c.id)}">+ Add</button>` : ""}</div>`).join("")
           + (groups.length ? "" : `<span class="muted small">Create a group below to add people to the log.</span>`)
           : `<span class="muted">No one at ${esc(a.company)} in your Contacts yet.</span>`}</div>` : "";
@@ -1229,6 +1250,23 @@
         renderOutreach();
       }
     };
+    // Prefill for a new contact from an entry: first word is the first name, the rest the last name;
+    // text before the first comma is the title, the rest the company (the application's company if there is none).
+    const contactPrefill = (o) => {
+      const [first, ...rest] = o.name.trim().split(/\s+/);
+      const tc = (o.title_company || "").trim(), i = tc.indexOf(",");
+      return { first_name: first, last_name: rest.join(" "), job_title: i < 0 ? tc : tc.slice(0, i).trim(), company: i < 0 ? a.company || "" : tc.slice(i + 1).trim() };
+    };
+    async function saveToContacts(o) {
+      const dupe = state.contacts.find((c) => fullName(c).toLowerCase() === o.name.trim().toLowerCase());
+      if (dupe && confirm(`${fullName(dupe)} is already in Contacts. Link this entry to them instead of creating a new contact?`)) {
+        Object.assign(o, await run(() => backend.saveOutreach({ id: o.id, contact_id: dupe.id })));
+        renderOutreach();
+        return;
+      }
+      state.contactDraft = { entryId: o.id, appId: a.id, prefill: contactPrefill(o) };
+      location.hash = "#/new";
+    }
     const nextOrder = (list) => list.reduce((m, x) => Math.max(m, x.sort_order + 1), 0);
     outBox.addEventListener("click", async (e) => {
       const t = e.target.closest("button, [data-out-edit]");
@@ -1238,8 +1276,10 @@
       else if (d.outPerson) {
         const c = state.contacts.find((x) => x.id === d.outPerson);
         const tc = [c.job_title, c.company].filter(Boolean).join(", ");
-        editOutreach({ type: "entry", id: null, group: groupsOf(a.id)[0].id, prefill: { name: fullName(c), title_company: tc } });
+        editOutreach({ type: "entry", id: null, group: groupsOf(a.id)[0].id, contactId: c.id, prefill: { name: fullName(c), title_company: tc } });
       } else if (d.outAdd) editOutreach({ type: "entry", id: null, group: d.outAdd });
+      else if (d.outHist) editOutreach({ type: "history", id: d.outHist });
+      else if (d.outSave) saveToContacts(state.outreach.find((x) => x.id === d.outSave));
       else if (d.outEdit) editOutreach({ type: "entry", id: d.outEdit, group: state.outreach.find((x) => x.id === d.outEdit).group_id });
       else if ("outCancel" in d) editOutreach(null);
       else if (d.outDelete) {
@@ -1285,16 +1325,26 @@
         editOutreach(null);
         return;
       }
+      if (f.dataset.outForm === "history") {
+        const o = state.outreach.find((x) => x.id === ed.id);
+        const entry = { contact_id: o.contact_id, kind: f.kind.value, happened_on: f.happened_on.value, method: f.method.value, note: f.note.value.trim() };
+        state.interactions.push(await run(() => backend.addInteraction(entry), f));
+        state.outreachLogged = o.id;
+        editOutreach(null);
+        return;
+      }
       const existing = ed.id ? state.outreach.find((x) => x.id === ed.id) : null;
       const groupId = f.group_id.value;
       const row = { application_id: a.id, group_id: groupId, name: f.name.value.trim(), title_company: f.title_company.value.trim(),
         update_text: f.update_text.value.trim() };
       if (!row.name) return;
       if (existing) row.id = existing.id;
+      if (!existing && ed.contactId) row.contact_id = ed.contactId;
       if (!existing || existing.group_id !== groupId) row.sort_order = nextOrder(outreachOf(a.id, groupId));
       const saved = await run(() => backend.saveOutreach(row), f);
       if (existing) Object.assign(existing, saved); else state.outreach.push(saved);
       editOutreach(null);
+      if (!existing && f.to_contacts && f.to_contacts.checked) saveToContacts(saved);
     });
     renderOutreach();
     // Emails from the Jobs folder, matched to this application by the Gmail sync.
@@ -2123,6 +2173,8 @@
     const sub = [c.job_title, c.company, c.location].filter(Boolean).join(" · ");
     const li = safeUrl(c.linkedin_url);
     const emails = emailRow(c, "work", "Work") + emailRow(c, "personal", "Personal");
+    const onApps = state.outreach.filter((o) => o.contact_id === c.id)
+      .map((o) => ({ o, ap: state.applications.find((x) => x.id === o.application_id) })).filter((x) => x.ap);
     let repliedBox;
     if (s.waiting) {
       const d = daysSince(s.lastOut.happened_on);
@@ -2177,6 +2229,10 @@
         <section class="section"><h3>Tags</h3>
           ${(c.tags || []).length ? `<div class="tags-cell" style="flex-wrap:wrap">${pills(c.tags)}</div>` : `<span class="muted">No tags</span>`}
         </section>
+
+        ${onApps.length ? `<section class="section"><h3>On applications</h3>${onApps.map(({ o, ap }) => `
+          <div class="out-line"><a href="#/application/${esc(ap.id)}">${esc(ap.position_title)}${ap.company ? " · " + esc(ap.company) : ""}</a>
+            <span class="muted small"> — ${esc((state.outreachGroups.find((g) => g.id === o.group_id) || {}).name || "")}</span></div>`).join("")}</section>` : ""}
 
         <section class="section" id="history"><h3>History</h3>
           ${state.logOpen ? `
@@ -2253,7 +2309,8 @@
   }
 
   function renderContactForm(el, existing) {
-    const c = existing || { tags: [], personal_email_status: "unchecked", work_email_status: "unchecked" };
+    const draft = existing ? null : state.contactDraft;
+    const c = existing || { tags: [], personal_email_status: "unchecked", work_email_status: "unchecked", ...(draft ? draft.prefill : {}) };
     let tags = [...(c.tags || [])];
     const text = (name, label, type = "text", extra = "") =>
       `<div class="field"><label for="f-${name}">${label}</label><input id="f-${name}" name="${name}" type="${type}" value="${esc(c[name])}"${extra}></div>`;
@@ -2359,6 +2416,15 @@
         state.flash = "Saved.";
       } else {
         state.contacts.push(saved);
+        if (draft) {
+          // Came from an application's outreach log: link the entry, then go back to the application.
+          const entry = state.outreach.find((o) => o.id === draft.entryId);
+          if (entry) Object.assign(entry, await run(() => backend.saveOutreach({ id: entry.id, contact_id: saved.id }), el));
+          state.contactDraft = null;
+          state.flash = `${fullName(saved)} saved to Contacts and linked.`;
+          location.hash = "#/application/" + draft.appId;
+          return;
+        }
         state.flash = "Contact saved. Log your first outreach below.";
         state.logOpen = true;
       }
@@ -2371,6 +2437,7 @@
         await run(() => backend.deleteContact(existing.id), el);
         state.contacts = state.contacts.filter((x) => x.id !== existing.id);
         state.interactions = state.interactions.filter((x) => x.contact_id !== existing.id);
+        state.outreach.forEach((o) => { if (o.contact_id === existing.id) o.contact_id = null; });
         state.flash = `Deleted ${fullName(existing)}.`;
         location.hash = baseHash();
       });
@@ -2516,6 +2583,7 @@
     closeRowMenu();
     if (prev.panel === "import" && state.route.panel !== "import") state.importPlan = null;
     if (state.route.panel !== "view") state.logOpen = state.route.panel === "view" && state.logOpen;
+    if (!(state.route.panel === "edit" && !state.route.id)) state.contactDraft = null;
     if (prev.panel !== state.route.panel || prev.id !== state.route.id) state.appAction = null;
     // Re-render the page underneath only when it changed or the panel closed (data may have changed).
     if (prev.page !== state.route.page || !state.route.panel || !($("#rows") || $("#app-rows"))) renderPage();
