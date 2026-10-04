@@ -21,6 +21,8 @@
     sort: { key: "name", dir: 1 },
     flash: "",
     logOpen: false,
+    outreach: [],
+    outreachEdit: null,
     loaded: false,
     route: { page: "contacts" },
     importPlan: null,
@@ -827,6 +829,23 @@
   }
   const questionsText = (a) => questionsOf(a).map((x) => (x.q ? `Q: ${x.q}\nA: ${x.a}` : x.a)).join("\n\n");
 
+  // ---------- outreach log (per application) ----------
+
+  const OUTREACH_GROUPS = ["active", "no_response", "direct"];
+  const outreachTitle = (key, a) => (key === "active" ? "Warm Outreach — Active Support"
+    : key === "no_response" ? "Warm Outreach — No Response Yet" : `Direct Outreach to ${a.company || "Company"} Team`);
+  const outreachOf = (appId, group) => state.outreach.filter((o) => o.application_id === appId && (!group || o.group_key === group))
+    .sort((x, y) => (x.sort_order - y.sort_order) || String(x.created_at).localeCompare(String(y.created_at)));
+  const outreachLine = (o) => `${o.name}${o.title_company ? ` (${o.title_company})` : ""}${o.update_text ? ` — ${o.update_text}` : ""}`;
+  // The three groups as plain text, for copying or the CSV. Empty when nothing is logged and `blankIfEmpty`.
+  function outreachText(a, blankIfEmpty) {
+    if (blankIfEmpty && !outreachOf(a.id).length) return "";
+    return OUTREACH_GROUPS.map((g) => {
+      const list = outreachOf(a.id, g);
+      return outreachTitle(g, a) + "\n" + (list.length ? list.map((o) => "- " + outreachLine(o)).join("\n") : "Nothing logged yet");
+    }).join("\n\n");
+  }
+
   // Status is To Start / Completed; the stage shown is derived from the dates.
   function stageOf(a) {
     if (a.status !== "completed") return { key: "to_start", label: "To Start", cls: "" };
@@ -860,7 +879,7 @@
       if (track && resumeChoice(a) !== track) return false;
       if (match) {
         const key = [a.position_title, a.company].join(" ").toLowerCase();
-        if (!match([key, a.location, a.notes, a.cover_letter, questionsText(a)].join(" ").toLowerCase(), key)) return false;
+        if (!match([key, a.location, a.notes, a.cover_letter, questionsText(a), outreachOf(a.id).map(outreachLine).join(" ")].join(" ").toLowerCase(), key)) return false;
       }
       return true;
     });
@@ -878,10 +897,10 @@
 
   function exportApplications(list) {
     const header = ["Position Title", "Company", "Location", "Job Link", "Status", "Stage", "Date Applied",
-      "Interview Dates", "Rejection Date", "Resume", "Resume File", "Notes", "Cover Letter", "Questions"];
+      "Interview Dates", "Rejection Date", "Resume", "Resume File", "Notes", "Cover Letter", "Questions", "Outreach"];
     downloadCsv(`applications-${todayISO()}.csv`, header, list.map(({ a, st }) => [
       a.position_title, a.company, a.location, a.job_url, a.status === "completed" ? "Completed" : "To Start", st.label,
-      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, resumeLabel(a), a.resume_file_name, a.notes, a.cover_letter, questionsText(a),
+      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, resumeLabel(a), a.resume_file_name, a.notes, a.cover_letter, questionsText(a), outreachText(a, true),
     ]));
   }
 
@@ -1036,6 +1055,12 @@
           <div id="prep-box"><span class="muted">Loading…</span></div>
           <input type="file" id="prep-file" hidden>
         </section>
+        <section class="section"><h3>Outreach</h3>
+          <div id="out-box"></div>
+        </section>
+        <section class="section"><h3>Emails <span class="muted small" id="mail-count"></span></h3>
+          <div id="mail-box"><span class="muted">Loading…</span></div>
+        </section>
         <section class="section"><h3>Timeline</h3>
           ${actionForm}
           ${events.length ? `<div class="timeline">${events.map((e) => `
@@ -1111,6 +1136,112 @@
       loadPrep();
     });
     loadPrep();
+    // Outreach log: three groups of plain-text entries, edited inline.
+    const outBox = $("#out-box", el);
+    const autogrowTa = (ta) => {
+      const fit = () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + 2 + "px"; };
+      ta.addEventListener("input", fit);
+      fit();
+    };
+    const renderOutreach = () => {
+      const ed = state.outreachEdit && state.outreachEdit.appId === a.id ? state.outreachEdit : null;
+      const form = (o, group) => `
+        <form class="log-form out-form" data-out-form>
+          <div class="field wide"><label>Name</label><input name="name" required value="${esc(o ? o.name : "")}"></div>
+          <div class="field wide"><label>Title / Company (optional)</label><input name="title_company" value="${esc(o ? o.title_company : "")}"></div>
+          <div class="field wide"><label>Update</label><textarea name="update_text" class="autogrow" rows="2" placeholder="e.g. email sent 5/5; LinkedIn connected; replied">${esc(o ? o.update_text : "")}</textarea></div>
+          <div class="field wide"><label>Group</label><select name="group_key">${options(OUTREACH_GROUPS.map((g) => [g, outreachTitle(g, a)]), group)}</select></div>
+          <div class="btns">${o ? `<button type="button" class="btn ghost danger-text" data-out-delete="${esc(o.id)}">Delete</button><span class="grow"></span>` : ""}
+            <button type="button" class="btn ghost" data-out-cancel>Cancel</button><button class="btn primary" type="submit">Save</button></div>
+        </form>`;
+      outBox.innerHTML = `<div class="doc-actions"><button class="btn" type="button" id="out-copy">${I.copy(14)} Copy outreach</button></div>`
+        + OUTREACH_GROUPS.map((g) => {
+          const list = outreachOf(a.id, g);
+          const adding = ed && !ed.id && ed.group === g;
+          return `<div class="out-group"><h4>${esc(outreachTitle(g, a))}</h4>
+            ${list.length || adding ? `<ul class="out-list">${list.map((o, i) => ed && ed.id === o.id ? `<li class="editing">${form(o, g)}</li>` : `
+              <li><div class="out-main" role="button" tabindex="0" data-out-edit="${esc(o.id)}" title="Click to edit">
+                  <span class="out-line"><b>${esc(o.name)}</b>${o.title_company ? ` (${esc(o.title_company)})` : ""}${o.update_text ? ` — ${esc(o.update_text)}` : ""}</span>
+                  <span class="out-date">Updated ${esc(fmtDate((o.updated_at || o.created_at || "").slice(0, 10)))}</span></div>
+                <div class="out-move">
+                  <button type="button" class="icon-btn out-up" data-out-move="${esc(o.id)}:-1" aria-label="Move up"${i === 0 ? " disabled" : ""}>${I.chevron(14)}</button>
+                  <button type="button" class="icon-btn" data-out-move="${esc(o.id)}:1" aria-label="Move down"${i === list.length - 1 ? " disabled" : ""}>${I.chevron(14)}</button></div></li>`).join("")}
+              ${adding ? `<li class="editing">${form(null, g)}</li>` : ""}</ul>` : `<span class="muted">Nothing logged yet</span>`}
+            ${adding ? "" : `<div><button type="button" class="btn ghost" data-out-add="${g}">+ Add</button></div>`}</div>`;
+        }).join("");
+      $$("textarea.autogrow", outBox).forEach(autogrowTa);
+      const first = $("[data-out-form] input", outBox);
+      if (first) first.focus();
+    };
+    const editOutreach = (v) => { state.outreachEdit = v && { appId: a.id, ...v }; renderOutreach(); };
+    outBox.addEventListener("click", async (e) => {
+      const t = e.target.closest("button, [data-out-edit]");
+      if (!t || !outBox.contains(t)) return;
+      if (t.id === "out-copy") {
+        try { await navigator.clipboard.writeText(outreachText(a)); } catch (err) { /* clipboard blocked */ }
+        const label = t.innerHTML;
+        t.innerHTML = I.check(14) + " Copied";
+        setTimeout(() => { t.innerHTML = label; }, 1500);
+      } else if (t.dataset.outAdd) editOutreach({ id: null, group: t.dataset.outAdd });
+      else if (t.dataset.outEdit) {
+        const o = state.outreach.find((x) => x.id === t.dataset.outEdit);
+        editOutreach({ id: o.id, group: o.group_key });
+      } else if ("outCancel" in t.dataset) editOutreach(null);
+      else if (t.dataset.outDelete) {
+        const o = state.outreach.find((x) => x.id === t.dataset.outDelete);
+        if (!confirm(`Delete ${o.name} from this outreach log?`)) return;
+        await run(() => backend.deleteOutreach(o.id), t.closest("form"));
+        state.outreach = state.outreach.filter((x) => x.id !== o.id);
+        editOutreach(null);
+      } else if (t.dataset.outMove) {
+        const [id, dir] = t.dataset.outMove.split(":");
+        const group = state.outreach.find((x) => x.id === id).group_key;
+        const list = outreachOf(a.id, group);
+        const i = list.findIndex((x) => x.id === id), j = i + Number(dir);
+        if (j < 0 || j >= list.length) return;
+        [list[i], list[j]] = [list[j], list[i]];
+        const before = new Map(list.map((x) => [x.id, x.sort_order]));
+        const changed = [];
+        list.forEach((x, n) => { if (x.sort_order !== n) { x.sort_order = n; changed.push({ id: x.id, sort_order: n }); } });
+        renderOutreach();
+        try { await run(() => backend.reorderOutreach(changed)); } catch (err) {
+          list.forEach((x) => { x.sort_order = before.get(x.id); });
+          renderOutreach();
+        }
+      }
+    });
+    outBox.addEventListener("keydown", (e) => {
+      const t = e.target.closest("[data-out-edit]");
+      if (t && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); t.click(); }
+    });
+    outBox.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const ed = state.outreachEdit;
+      const existing = ed.id ? state.outreach.find((x) => x.id === ed.id) : null;
+      const group = f.group_key.value;
+      const row = { application_id: a.id, group_key: group, name: f.name.value.trim(), title_company: f.title_company.value.trim(),
+        update_text: f.update_text.value.trim() };
+      if (!row.name) return;
+      if (existing) row.id = existing.id;
+      if (!existing || existing.group_key !== group) row.sort_order = outreachOf(a.id, group).reduce((m, x) => Math.max(m, x.sort_order + 1), 0);
+      const saved = await run(() => backend.saveOutreach(row), f);
+      if (existing) Object.assign(existing, saved); else state.outreach.push(saved);
+      editOutreach(null);
+    });
+    renderOutreach();
+    // Emails from the Jobs folder, matched to this application by the Gmail sync.
+    (async () => {
+      let mails = [];
+      try { mails = await backend.listApplicationEmails(a.id); } catch (e) { /* table not created yet */ }
+      const box = $("#mail-box", el);
+      if (!box) return;
+      $("#mail-count", el).textContent = mails.length || "";
+      box.innerHTML = mails.length ? `<div class="mail-list">${mails.map((m) => `
+        <div class="mail-row"><span class="badge ${m.direction === "out" ? "" : "yes"}">${m.direction === "out" ? "Sent" : "Received"}</span>
+          <span class="mail-who">${esc(m.counterpart || "")}</span><span class="muted small">${esc(fmtDate(m.happened_on))}</span></div>`).join("")}</div>`
+        : `<span class="muted">No emails yet. Emails in your Jobs folder from ${a.company ? esc(a.company) : "this company"} show up here.</span>`;
+    })();
     $$("[data-copy-doc]", el).forEach((b) => b.addEventListener("click", async () => {
       const key = b.dataset.copyDoc;
       const text = key.startsWith("qa:") ? qs[Number(key.slice(3))].a : a[key] || "";
@@ -1294,6 +1425,7 @@
         if (!confirm(`Delete the ${existing.position_title} application? This can't be undone.`)) return;
         await run(() => backend.deleteApplication(existing.id), el);
         state.applications = state.applications.filter((x) => x.id !== existing.id);
+        state.outreach = state.outreach.filter((o) => o.application_id !== existing.id);
         state.flash = "Application deleted.";
         location.hash = baseHash();
       });
@@ -1787,7 +1919,9 @@
     if (!box) return;
     const intro = `<h2 style="margin:0;font-size:16px;font-weight:600">Gmail sync</h2>
       <p class="muted" style="margin:0">Every hour, emails you send to people in your contacts are logged as "You reached out · Email", and their emails to you as "They replied · Email". Only who and when is read — never the email itself — using read-only access.</p>
-      <p class="muted" style="margin:0"><b>Adding new people:</b> in Gmail, put the label <b>Networking</b> on an email. Everyone on it who isn't a contact yet is added (tagged "Added from Gmail") on the next check. Works on emails from the last 30 days.</p>`;
+      <p class="muted" style="margin:0"><b>Only two Gmail folders are read:</b> <b>Networking</b> and <b>Jobs</b>. Nothing else in your mailbox is searched.</p>
+      <p class="muted" style="margin:0"><b>Networking:</b> everyone in an email you move there who isn't a contact yet is added (tagged "Added from Gmail") on the next check.</p>
+      <p class="muted" style="margin:0"><b>Jobs:</b> emails you move there are matched to the application with the same company and listed under it. You still set the application's stage yourself. Works on emails from the last 30 days.</p>`;
     if (backend.demo) {
       box.innerHTML = intro + `<p class="muted" style="margin:0">Not available in demo mode.</p>`;
       return;
@@ -1847,7 +1981,7 @@
         ${step(4, `Click the <b>Save</b> icon. In the dropdown next to <b>Debug</b> at the top, choose <b>setup</b>, then click <b>Run</b>.`)}
         ${step(5, `Google asks for permission: <b>Review permissions</b> → pick your account → on "Google hasn't verified this app" click <b>Advanced</b> → <b>Go to Untitled project (unsafe)</b> → <b>Allow</b>. That warning shows for every personal script; this one is only yours.`)}
         ${step(6, `The log at the bottom should say <b>All set!</b> Come back here and refresh — it will show <b>Connected</b>.`)}
-        ${step(7, `In Gmail, create the label: open any email, click the <b>Labels</b> icon (a tag shape) above it → <b>Create new</b> → type <b>Networking</b> → <b>Create</b>. From then on, give that label to any email whose people you want added.`)}
+        ${step(7, `Make sure your Gmail folders are named exactly <b>Networking</b> and <b>Jobs</b>. Move an email into one of them and it's picked up on the next check.`)}
       </ol>
       <p class="muted" style="margin:0;font-size:12px">The script contains a private connection code for your contacts. Don't share it. If it's ever exposed, use "Set up again" to replace it.</p>
       <div class="actions"><button class="btn" id="sync-done">Done</button></div>`;

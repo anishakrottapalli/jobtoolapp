@@ -425,6 +425,9 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .doc-wrap .doc-full { padding-right: 52px; }
 .doc-copy { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; background: var(--card); }
 
+.mail-list { display: flex; flex-direction: column; gap: 8px; }
+.mail-row { display: flex; align-items: center; gap: 10px; }
+.mail-who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
 
 .block { margin-bottom: 28px; }
 .block-body { margin-top: 12px; }
@@ -474,3 +477,19 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .markdown a { color: var(--link); }
 .markdown code { font-family: "Geist Mono", ui-monospace, monospace; font-size: .9em; background: var(--panel); padding: 1px 5px; border-radius: 4px; }
 .markdown blockquote { margin: 1em 0; padding-left: 14px; border-left: 3px solid var(--line-2); color: var(--muted); }
+
+.out-group { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.out-group h4 { margin: 0; font-size: 13px; font-weight: 600; color: var(--fg); }
+.out-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 10px; }
+.out-list li { position: relative; padding-right: 64px; color: var(--fg-2); font-size: 13.5px; line-height: 1.5; }
+.out-list li.editing { padding-right: 0; margin-left: -18px; list-style: none; }
+.out-main { cursor: pointer; border-radius: 6px; }
+.out-main:hover .out-line { color: var(--fg); }
+.out-line { white-space: pre-wrap; overflow-wrap: anywhere; }
+.out-date { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.out-move { position: absolute; right: 0; top: -2px; display: flex; }
+.out-move .icon-btn { width: 28px; height: 28px; border-color: transparent; }
+.out-move .icon-btn:disabled { opacity: .3; cursor: default; }
+.out-up svg { transform: rotate(180deg); }
+.out-form .btns .grow { flex: 1; }
+.out-form .danger-text { color: #e5484d; }
