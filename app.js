@@ -510,6 +510,15 @@
     $("#menu-btn").addEventListener("click", () => shell.classList.add("nav-open"));
     $(".nav-scrim").addEventListener("click", () => shell.classList.remove("nav-open"));
     $$(".nav-item").forEach((a) => a.addEventListener("click", () => shell.classList.remove("nav-open")));
+    // Clicking any tab returns it to its main view: lists show everything with no filter or search,
+    // and pages close any open form. If you're already on that page, it redraws.
+    $$(".nav-item").forEach((a) => a.addEventListener("click", () => {
+      const nav = a.dataset.nav;
+      if (nav === "applications") state.appFilters = { q: "", stage: "all", track: "" };
+      if (nav === "contacts") state.filters = { q: "", status: "all", tag: "" };
+      $("#search").value = "";
+      if ((location.hash || "#/") === a.getAttribute("href")) renderPage();
+    }));
 
     const search = $("#search");
     search.value = state.filters.q;
@@ -1140,7 +1149,7 @@
   }
 
   function renderAppForm(el, existing) {
-    const a = existing || { status: "completed", date_applied: todayISO(), interview_dates: [] };
+    const a = existing || { status: "to_start", date_applied: null, interview_dates: [] };
     const text = (name, label, type = "text", extra = "") =>
       `<div class="field"><label for="a-${name}">${label}</label><input id="a-${name}" name="${name}" type="${type}" value="${esc(a[name])}"${extra}></div>`;
     el.innerHTML = `
@@ -1159,6 +1168,8 @@
           <div class="cols-2">
             <div class="field"><label for="a-status">Status</label>
               <select id="a-status" name="status">${options([["to_start", "To Start"], ["completed", "Completed (applied)"]], a.status)}</select></div>
+          </div>
+          <div class="cols-2" id="applied-fields"${a.status === "completed" ? "" : " hidden"}>
             ${text("date_applied", "Date applied", "date")}
             ${text("rejection_date", "Rejection date", "date")}
           </div>
@@ -1203,6 +1214,13 @@
     };
     $$("textarea.autogrow", el).forEach(autogrow);
 
+    // Date applied and rejection date only apply once the job is completed (applied).
+    $("#a-status", el).addEventListener("change", (e) => {
+      const done = e.target.value === "completed";
+      $("#applied-fields", el).hidden = !done;
+      if (done && !form.date_applied.value) form.date_applied.value = todayISO();
+    });
+
     // Resume: general vs tailored, with an optional uploaded file.
     let removeFile = false;
     $$('input[name="resume_kind"]', el).forEach((r) => r.addEventListener("change", () => {
@@ -1246,8 +1264,9 @@
       data.resume_tailored = data.resume_kind === "tailored";
       data.resume_track = !data.resume_kind || data.resume_tailored ? null : data.resume_kind;
       delete data.resume_kind;
-      data.date_applied = data.date_applied || (data.status === "completed" ? todayISO() : null);
-      data.rejection_date = data.rejection_date || null;
+      const done = data.status === "completed";
+      data.date_applied = done ? data.date_applied || todayISO() : null;
+      data.rejection_date = done ? data.rejection_date || null : null;
       if (data.job_url) data.job_url = safeUrl(data.job_url) || data.job_url;
       data.questions = $$(".qa-edit", el)
         .map((row) => ({ q: $(".qa-q", row).value.trim(), a: $(".qa-a", row).value.trim() }))
