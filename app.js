@@ -479,13 +479,18 @@
             <a class="nav-item" data-nav="documents" href="#/documents">${I.doc(17)}<span>Documents</span></a>
             <a class="nav-item" data-nav="profile" href="#/profile">${I.user()}<span>Profile</span></a>
             <a class="nav-item" data-nav="resources" href="#/resources">${I.book()}<span>Resources</span></a>
-            <a class="nav-item" data-nav="vision" href="#/vision">${I.target()}<span>Career Vision</span></a>
-            <a class="nav-item" data-nav="export" href="#/export">${I.download()}<span>Export</span></a>`)}
-          ${section("account", "Account", `
-            <a class="nav-item" data-nav="settings" href="#/settings">${I.settings()}<span>Settings</span></a>`)}
-          <div class="user-chip">
-            <span class="avatar me" id="me-initials"></span>
-            <div class="who"><span id="me-name"></span><span>${esc(state.user.email)}</span></div>
+            <a class="nav-item" data-nav="vision" href="#/vision">${I.target()}<span>Career Vision</span></a>`)}
+          <div class="user-menu" id="user-menu">
+            <div class="user-popup" id="user-popup" role="menu" hidden>
+              <a class="nav-item" role="menuitem" data-nav="settings" href="#/settings">${I.settings()}<span>Settings</span></a>
+              <a class="nav-item" role="menuitem" data-nav="export" href="#/export">${I.download()}<span>Export</span></a>
+              <button class="nav-item" role="menuitem" id="sign-out" type="button">${I.signout(17)}<span>Sign out</span></button>
+            </div>
+            <button class="user-chip" id="user-chip" type="button" aria-haspopup="menu" aria-expanded="false">
+              <span class="avatar me" id="me-initials"></span>
+              <div class="who"><span id="me-name"></span><span>${esc(state.user.email)}</span></div>
+              ${I.chevron()}
+            </button>
           </div>
         </nav>
         <div class="main-col">
@@ -511,6 +516,25 @@
       btn.setAttribute("aria-expanded", String(!now[sec.dataset.section]));
       store("collapsed", now);
     }));
+    // Account menu: opens upward from the name at the bottom of the sidebar.
+    const chip = $("#user-chip");
+    const popup = $("#user-popup");
+    const setMenu = (open) => {
+      popup.hidden = !open;
+      chip.setAttribute("aria-expanded", String(open));
+    };
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setMenu(popup.hidden);
+    });
+    document.addEventListener("click", (e) => { if (!popup.hidden && !popup.contains(e.target)) setMenu(false); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !popup.hidden) { setMenu(false); chip.focus(); } });
+    $$(".nav-item", popup).forEach((a) => a.addEventListener("click", () => setMenu(false)));
+    $("#sign-out").addEventListener("click", async () => {
+      await backend.signOut();
+      location.hash = "#/";
+      location.reload();
+    });
     const shell = $(".shell");
     $("#menu-btn").addEventListener("click", () => shell.classList.add("nav-open"));
     $(".nav-scrim").addEventListener("click", () => shell.classList.remove("nav-open"));
@@ -554,7 +578,8 @@
     if (document.activeElement !== search && search.value !== q) search.value = q;
     $("#me-name").textContent = state.displayName;
     $("#me-initials").textContent = state.displayName.slice(0, 2).toUpperCase();
-    $$(".nav-item").forEach((a) => a.classList.toggle("active", a.dataset.nav === state.route.page));
+    $$(".nav-item[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === state.route.page));
+    $("#user-chip").classList.toggle("active", ["settings", "export"].includes(state.route.page));
   }
 
   // ---------- pages ----------
@@ -1989,11 +2014,7 @@
         <div class="field"><span class="label">Signed in as</span><span>${esc(state.user.email)}</span></div>
         <div class="actions"><button class="btn primary" type="submit">Save</button></div>
       </form>
-      <div class="card settings-card" id="sync-card" style="max-width:760px"><span class="muted">Loading Gmail sync…</span></div>
-      <div class="card settings-card">
-        <div class="field"><span class="label">Sign out of this device</span></div>
-        <div class="actions"><button class="btn" id="sign-out">${I.signout()} Sign out</button></div>
-      </div>`;
+      <div class="card settings-card" id="sync-card" style="max-width:760px"><span class="muted">Loading Gmail sync…</span></div>`;
     const form = $("#settings-form");
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -2002,11 +2023,6 @@
       state.displayName = name;
       state.flash = "Saved.";
       renderPage();
-    });
-    $("#sign-out").addEventListener("click", async () => {
-      await backend.signOut();
-      location.hash = "#/";
-      location.reload();
     });
     renderSyncCard();
   }
