@@ -2022,6 +2022,10 @@
     return fmtDate(isoOf(new Date(iso)));
   }
 
+  function fmtDateTime(iso) {
+    return new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  }
+
   async function sha256Hex(text) {
     const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
     return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -2036,10 +2040,10 @@
     const box = $("#sync-card");
     if (!box) return;
     const intro = `<h2 style="margin:0;font-size:16px;font-weight:600">Gmail sync</h2>
-      <p class="muted" style="margin:0">Every hour, emails you send to people in your contacts are logged as "You reached out · Email", and their emails to you as "They replied · Email". Only who and when is read — never the email itself — using read-only access.</p>
+      <p class="muted" style="margin:0">Every hour, emails you send to people in your contacts are logged as "You reached out · Email", and their emails to you as "They replied · Email". Read-only access; nothing is sent or changed in Gmail.</p>
       <p class="muted" style="margin:0"><b>Only two Gmail folders are read:</b> <b>Networking</b> and <b>Jobs</b>. Nothing else in your mailbox is searched.</p>
-      <p class="muted" style="margin:0"><b>Networking:</b> everyone in an email you move there who isn't a contact yet is added (tagged "Added from Gmail") on the next check.</p>
-      <p class="muted" style="margin:0"><b>Jobs:</b> emails you move there are matched to the application with the same company and listed under it. You still set the application's stage yourself. Works on emails from the last 30 days.</p>`;
+      <p class="muted" style="margin:0"><b>Networking:</b> everyone in an email you move there who isn't a contact yet is added (tagged "Added from Gmail") on the next check. Only who and when is read — never the email itself.</p>
+      <p class="muted" style="margin:0"><b>Jobs:</b> emails you move there are matched to the application with the same company and listed under it — by the sender's email or name, or, if that doesn't say, by the company named in the email's subject or text. That text is only checked inside your Google account; it is never sent to this app or stored. You still set the application's stage yourself. Works on emails from the last 30 days.</p>`;
     if (backend.demo) {
       box.innerHTML = intro + `<p class="muted" style="margin:0">Not available in demo mode.</p>`;
       return;
@@ -2056,22 +2060,36 @@
       return;
     }
     const line = !status ? `<span class="badge">Not connected</span>`
-      : status.last_sync_at ? `<span class="badge yes">${I.check()} Connected</span> <span class="muted">Last checked ${esc(timeAgo(status.last_sync_at))}</span>`
+      : status.last_sync_at ? `<span class="badge yes">${I.check()} Connected</span> <span class="muted">Last synced ${esc(fmtDateTime(status.last_sync_at))} (${esc(timeAgo(status.last_sync_at))}). Checks run hourly.</span>`
       : `<span class="badge warn">Waiting for first check</span> <span class="muted">Finish the steps in Google, then refresh this page.</span>`;
     box.innerHTML = `${intro}<div>${line}</div>
       <div class="actions">
         <button class="btn${status ? "" : " primary"}" id="sync-setup">${status ? "Set up again" : "Set up Gmail sync"}</button>
         ${status ? `<button class="btn danger" id="sync-disconnect">Disconnect</button>` : ""}
       </div>`;
-    $("#sync-setup").addEventListener("click", async () => {
-      if (status && !confirm("This replaces your current connection code. You'll need to paste the new script into Google again. Continue?")) return;
+    // Native confirm() dialogs can be blocked (e.g. in embedded browsers), which made these buttons look dead.
+    const confirmClick = (btn, prompt) => {
+      if (btn.dataset.armed) return true;
+      btn.dataset.armed = "1";
+      const label = btn.textContent;
+      btn.textContent = "Click again to confirm";
+      box.insertAdjacentHTML("beforeend", `<p class="muted" style="margin:0" data-confirm-note>${esc(prompt)}</p>`);
+      setTimeout(() => {
+        delete btn.dataset.armed;
+        btn.textContent = label;
+        $$("[data-confirm-note]", box).forEach((n) => n.remove());
+      }, 6000);
+      return false;
+    };
+    $("#sync-setup").addEventListener("click", async (e) => {
+      if (status && !confirmClick(e.currentTarget, "This replaces your current connection code. You'll need to paste the new script into Google again.")) return;
       const token = newToken();
       await run(async () => backend.registerSyncToken(await sha256Hex(token)), box);
       renderSyncCard({ token, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
     });
     const dis = $("#sync-disconnect");
-    if (dis) dis.addEventListener("click", async () => {
-      if (!confirm("Stop logging Gmail activity? Entries already logged stay in your contacts' history.")) return;
+    if (dis) dis.addEventListener("click", async (e) => {
+      if (!confirmClick(e.currentTarget, "Stop logging Gmail activity? Entries already logged stay in your contacts' history.")) return;
       await run(() => backend.disconnectSync(), box);
       renderSyncCard();
     });
