@@ -159,6 +159,38 @@
     }
   }
 
+  // In-page replacement for confirm(): native dialogs can be suppressed by the browser, which made Delete buttons look dead.
+  function confirmBox(message, confirmLabel = "Delete") {
+    return new Promise((resolve) => {
+      const prevFocus = document.activeElement;
+      const el = document.createElement("div");
+      el.className = "confirm-scrim";
+      el.innerHTML = `
+        <div class="confirm-box" role="alertdialog" aria-modal="true" aria-label="Confirm">
+          <p>${esc(message)}</p>
+          <div class="confirm-actions">
+            <button class="btn" type="button" data-no>Cancel</button>
+            <button class="btn danger" type="button" data-yes>${esc(confirmLabel)}</button>
+          </div>
+        </div>`;
+      const done = (ok) => {
+        document.removeEventListener("keydown", onKey, true);
+        el.remove();
+        if (prevFocus && prevFocus.focus) prevFocus.focus();
+        resolve(ok);
+      };
+      const onKey = (e) => {
+        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); }
+      };
+      document.addEventListener("keydown", onKey, true);
+      el.querySelector("[data-no]").addEventListener("click", () => done(false));
+      el.querySelector("[data-yes]").addEventListener("click", () => done(true));
+      el.addEventListener("click", (e) => { if (e.target === el) done(false); });
+      document.body.appendChild(el);
+      el.querySelector("[data-no]").focus();
+    });
+  }
+
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 
@@ -904,7 +936,7 @@
     return {
       total: state.applications.filter((a) => a.status === "completed").length,
       thisWeek: state.applications.filter((a) => a.status === "completed" && a.date_applied >= mondayISO).length,
-      inPlay: stages.filter((s) => s.key !== "rejected" && s.key !== "to_start").length,
+      inPlay: stages.filter((s) => s.key !== "rejected" && s.key !== "to_start" && s.key !== "ghosted").length,
       interviewing: stages.filter((s) => s.key === "interviewing").length,
       ghosted: stages.filter((s) => s.key === "ghosted").length,
     };
@@ -914,7 +946,7 @@
     const { q, stage, track } = state.appFilters;
     const match = searchMatcher(q);
     const rows = state.applications.map((a) => ({ a, st: stageOf(a) })).filter(({ a, st }) => {
-      if (stage === "inplay" && (st.key === "rejected" || st.key === "to_start")) return false;
+      if (stage === "inplay" && (st.key === "rejected" || st.key === "to_start" || st.key === "ghosted")) return false;
       if (stage !== "all" && stage !== "inplay" && st.key !== stage) return false;
       if (track && resumeChoice(a) !== track) return false;
       if (match) {
@@ -1151,7 +1183,7 @@
         const act = b.dataset.prep;
         if (act === "open") openFile(f.path);
         else if (act === "replace") prepInput.click();
-        else if (confirm("Remove the interview prep doc?")) {
+        else if (await confirmBox("Remove the interview prep doc?", "Remove")) {
           try { await run(() => Promise.all(prepFiles.map((x) => backend.removeFile(x.path))), el); } catch (e) { /* shown */ }
           loadPrep();
         }
@@ -1284,7 +1316,7 @@
     };
     async function saveToContacts(o) {
       const dupe = state.contacts.find((c) => fullName(c).toLowerCase() === o.name.trim().toLowerCase());
-      if (dupe && confirm(`${fullName(dupe)} is already in Contacts. Link this entry to them instead of creating a new contact?`)) {
+      if (dupe && await confirmBox(`${fullName(dupe)} is already in Contacts. Link this entry to them instead of creating a new contact?`, "Link")) {
         Object.assign(o, await run(() => backend.saveOutreach({ id: o.id, contact_id: dupe.id })));
         renderOutreach();
         return;
@@ -1309,7 +1341,7 @@
       else if ("outCancel" in d) editOutreach(null);
       else if (d.outDelete) {
         const o = state.outreach.find((x) => x.id === d.outDelete);
-        if (!confirm(`Delete ${o.name} from this outreach log?`)) return;
+        if (!(await confirmBox(`Delete ${o.name} from this outreach log?`))) return;
         await run(() => backend.deleteOutreach(o.id), t.closest("form"));
         state.outreach = state.outreach.filter((x) => x.id !== o.id);
         editOutreach(null);
@@ -1325,7 +1357,7 @@
       } else if (d.outGdelete) {
         const g = state.outreachGroups.find((x) => x.id === d.outGdelete);
         const n = outreachOf(a.id, g.id).length;
-        if (!confirm(n ? `Delete "${g.name}" and its ${n} ${n === 1 ? "entry" : "entries"}?` : `Delete the group "${g.name}"?`)) return;
+        if (!(await confirmBox(n ? `Delete "${g.name}" and its ${n} ${n === 1 ? "entry" : "entries"}?` : `Delete the group "${g.name}"?`))) return;
         await run(() => backend.deleteOutreachGroup(g.id));
         state.outreachGroups = state.outreachGroups.filter((x) => x.id !== g.id);
         state.outreach = state.outreach.filter((x) => x.group_id !== g.id);
@@ -1410,9 +1442,9 @@
         else saveApp(el, { id: a.id, status: "completed", date_applied: date }, "Marked as applied.");
       });
     }
-    $$("[data-app-del]", el).forEach((b) => b.addEventListener("click", () => {
+    $$("[data-app-del]", el).forEach((b) => b.addEventListener("click", async () => {
       const what = b.dataset.appDel;
-      if (!confirm(what === "rejection" ? "Remove the rejection? The application goes back in play." : "Remove this interview?")) return;
+      if (!(await confirmBox(what === "rejection" ? "Remove the rejection? The application goes back in play." : "Remove this interview?", "Remove"))) return;
       if (what === "rejection") saveApp(el, { id: a.id, rejection_date: null }, "Rejection removed.");
       else {
         const i = Number(what.split(":")[1]);
@@ -1564,7 +1596,7 @@
     });
     if (existing) {
       $("#delete-app", el).addEventListener("click", async () => {
-        if (!confirm(`Delete the ${existing.position_title} application? This can't be undone.`)) return;
+        if (!(await confirmBox(`Delete the ${existing.position_title} application? This can't be undone.`))) return;
         await run(() => backend.deleteApplication(existing.id), el);
         state.applications = state.applications.filter((x) => x.id !== existing.id);
         state.outreach = state.outreach.filter((o) => o.application_id !== existing.id);
@@ -1679,7 +1711,7 @@
       }));
       $$("[data-rm]", body).forEach((b) => b.addEventListener("click", async () => {
         const f = files[Number(b.dataset.rm)];
-        if (!confirm(`Remove "${f.name}"?`)) return;
+        if (!(await confirmBox(`Remove "${f.name}"?`, "Remove"))) return;
         try { await run(() => backend.removeFile(f.path)); } catch (e) { /* shown */ }
         load();
       }));
@@ -1755,7 +1787,7 @@
       }
       $$("[data-edit]", body).forEach((b) => b.addEventListener("click", () => { editing = b.dataset.edit; draw(); }));
       $$("[data-del]", body).forEach((b) => b.addEventListener("click", async () => {
-        if (!confirm("Delete this?")) return;
+        if (!(await confirmBox("Delete this?"))) return;
         try { await run(() => backend.deleteItem(b.dataset.del)); } catch (err) { return; }
         items = items.filter((x) => x.id !== b.dataset.del);
         draw();
@@ -2334,7 +2366,7 @@
       renderPage();
     }));
     $$("[data-del]", el).forEach((btn) => btn.addEventListener("click", async () => {
-      if (!confirm("Remove this history entry?")) return;
+      if (!(await confirmBox("Remove this history entry?", "Remove"))) return;
       await run(() => backend.deleteInteraction(btn.dataset.del), el);
       state.interactions = state.interactions.filter((x) => x.id !== btn.dataset.del);
       renderContactView(el, c);
@@ -2467,7 +2499,7 @@
 
     if (existing) {
       $("#delete-contact", el).addEventListener("click", async () => {
-        if (!confirm(`Delete ${fullName(existing)} and their whole history? This can't be undone.`)) return;
+        if (!(await confirmBox(`Delete ${fullName(existing)} and their whole history? This can't be undone.`))) return;
         await run(() => backend.deleteContact(existing.id), el);
         state.contacts = state.contacts.filter((x) => x.id !== existing.id);
         state.interactions = state.interactions.filter((x) => x.contact_id !== existing.id);
