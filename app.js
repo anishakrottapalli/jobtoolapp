@@ -1086,65 +1086,66 @@
           <button class="btn primary" type="submit">${action === "interview" ? "Add interview" : action === "reject" ? "Mark rejected" : "Mark applied"}</button></div>
       </form>` : "";
 
+    el.classList.add("app-panel");
+    const stSub = st.key === "rejected" ? "on " + fmtDate(a.rejection_date) : st.key === "ghosted" ? "No response in " + GHOST_DAYS + "+ days" : st.key === "to_start" ? "Not applied yet" : "";
+    const fact = (label, value, extra = "") => `<div class="fact"><span class="fact-l">${label}</span><span class="fact-v ${extra}">${value || `<span class="none">—</span>`}</span></div>`;
+    const sec = (title, order, body, opts = {}) => `
+        <section class="sec${opts.cls ? " " + opts.cls : ""}" style="order:${order}">
+          <header class="sec-head"><h3>${title}</h3>${opts.right || ""}</header>
+          <div class="sec-body">${body}</div>
+        </section>`;
+    const resumeBody = (resumeChoice(a)
+      ? `<div class="doc-actions"><span class="badge ${a.resume_tailored ? "solid" : ""}">${a.resume_tailored ? "Tailored for this job" : esc(trackLabel(a.resume_track)) + " resume"}</span></div>`
+      : `<span class="muted">Not recorded. <a href="#/application/${esc(a.id)}/edit">Choose the resume</a></span>`)
+      + (a.resume_file_path ? `<div class="file-row">${I.download(15)}<span class="file-name">${esc(a.resume_file_name || "Resume file")}</span>
+              <button class="btn" type="button" id="open-resume">Open</button></div>`
+        : a.resume_tailored ? `<span class="muted">No file uploaded yet. <a href="#/application/${esc(a.id)}/edit">Upload it</a></span>` : "");
+
     el.innerHTML = `
       <div class="panel-head">
         <span class="avatar lg">${I.briefcase(20)}</span>
-        <div class="title"><h2 id="panel-title">${esc(a.position_title)}</h2>${sub ? `<span>${esc(sub)}</span>` : ""}</div>
+        <div class="title">
+          <h2 id="panel-title">${esc(a.position_title)}</h2>
+          <span class="head-sub">${sub ? esc(sub) : "No company added"}</span>
+          <span class="head-badges"><span class="badge ${st.cls}">${esc(st.label)}</span>${stSub ? `<span class="muted small">${esc(stSub)}</span>` : ""}</span>
+        </div>
         <a class="icon-btn" href="#/application/${esc(a.id)}/edit" aria-label="Edit application">${I.pencil()}</a>
         ${closeBtn}
       </div>
       <div class="panel-body">
         ${flash}
-        <div class="cols-2">
-          <div class="status-box"><span class="l">Stage</span><span class="v${st.key === "ghosted" ? " warn" : ""}">${esc(st.label)}</span>
-            <span class="s">${st.key === "rejected" ? "on " + esc(fmtDate(a.rejection_date)) : st.key === "ghosted" ? "No response in " + GHOST_DAYS + "+ days" : st.key === "to_start" ? "Not applied yet" : ""}</span></div>
-          <div class="status-box"><span class="l">Date applied</span><span class="v">${a.date_applied ? esc(fmtDate(a.date_applied)) : "—"}</span>
-            <span class="s">${a.date_applied && a.status === "completed" ? daysSince(a.date_applied) + " days ago" : ""}</span></div>
+        <div class="app-layout">
+          <div class="app-main">
+            ${sec("Notes", 2, a.notes ? `<p class="prose">${esc(a.notes)}</p>` : `<span class="muted">No notes</span>`)}
+            ${sec("Cover letter", 4, a.cover_letter ? docBlock(a.cover_letter, "cover_letter", "cover letter") : `<span class="muted">None added</span>`)}
+            ${sec("Questions", 5, qs.length ? qs.map((x, i) => `
+              <div class="qa">
+                ${x.q ? `<p class="qa-q">${esc(x.q)}</p>` : ""}
+                ${docBlock(x.a, "qa:" + i, "answer")}
+              </div>`).join("")
+              : `<span class="muted">No questions added. <a href="#/application/${esc(a.id)}/edit">Add questions</a></span>`,
+              { right: qs.length ? `<span class="sec-count">${qs.length}</span>` : "" })}
+            ${sec("Outreach", 7, `<div id="out-box"></div>`)}
+            ${sec("Emails", 8, `<div id="mail-box"><span class="muted">Loading…</span></div>`, { right: `<span class="sec-count" id="mail-count"></span>` })}
+          </div>
+          <div class="app-aside">
+            ${sec("Overview", 1, `<div class="facts">
+              ${fact("Stage", esc(st.label), st.key === "ghosted" ? "warn" : "")}
+              ${fact("Applied", a.date_applied ? esc(fmtDate(a.date_applied)) + (a.status === "completed" ? `<small>${daysSince(a.date_applied)} days ago</small>` : "") : "")}
+              ${fact("Location", esc(a.location))}
+              ${fact("Job posting", job ? `<a href="${esc(job)}" target="_blank" rel="noopener">Open posting ↗</a>` : "")}
+            </div>`, { cls: "overview" })}
+            ${sec("Resume", 3, resumeBody)}
+            ${sec("Interview prep", 6, `<div id="prep-box"><span class="muted">Loading…</span></div><input type="file" id="prep-file" hidden>`)}
+            ${sec("Timeline", 9, `${actionForm}
+              ${events.length ? `<div class="timeline">${events.map((e) => `
+                <div class="tl-item">
+                  <span class="tl-dot ${e.kind}"></span>
+                  <div class="what"><b>${esc(e.text)}</b><span>${esc(fmtDate(e.date))}</span></div>
+                  ${e.del ? `<button class="icon-btn" data-app-del="${e.del}" aria-label="Remove ${esc(e.text)}" title="Remove">${I.trash()}</button>` : ""}
+                </div>`).join("")}</div>` : `<span class="muted">Nothing yet.</span>`}`)}
+          </div>
         </div>
-        <section class="cols-2">
-          ${kv("Job posting", job ? `<a href="${esc(job)}" target="_blank" rel="noopener">Open posting ↗</a>` : "")}
-          ${kv("Location", esc(a.location))}
-        </section>
-        <section class="section"><h3>Notes</h3>
-          ${a.notes ? `<p class="notes-box">${esc(a.notes)}</p>` : `<span class="muted">No notes</span>`}
-        </section>
-        <section class="section"><h3>Resume</h3>
-          ${resumeChoice(a) ? `<div class="doc-actions"><span class="badge ${a.resume_tailored ? "solid" : ""}">${a.resume_tailored ? "Tailored for this job" : esc(trackLabel(a.resume_track)) + " resume"}</span></div>`
-            : `<span class="muted">Not recorded. <a href="#/application/${esc(a.id)}/edit">Choose the resume</a></span>`}
-          ${a.resume_file_path ? `<div class="file-row">${I.download(15)}<span class="file-name">${esc(a.resume_file_name || "Resume file")}</span>
-              <button class="btn" type="button" id="open-resume">Open</button></div>`
-            : a.resume_tailored ? `<span class="muted">No file uploaded yet. <a href="#/application/${esc(a.id)}/edit">Upload it</a></span>` : ""}
-        </section>
-        <section class="section"><h3>Cover letter</h3>
-          ${a.cover_letter ? docBlock(a.cover_letter, "cover_letter", "cover letter") : `<span class="muted">None added</span>`}
-        </section>
-        <section class="section"><h3>Questions${qs.length ? ` <span class="muted small">${qs.length}</span>` : ""}</h3>
-          ${qs.length ? qs.map((x, i) => `
-            <div class="qa">
-              ${x.q ? `<p class="qa-q">${esc(x.q)}</p>` : ""}
-              ${docBlock(x.a, "qa:" + i, "answer")}
-            </div>`).join("")
-          : `<span class="muted">No questions added. <a href="#/application/${esc(a.id)}/edit">Add questions</a></span>`}
-        </section>
-        <section class="section"><h3>Interview prep</h3>
-          <div id="prep-box"><span class="muted">Loading…</span></div>
-          <input type="file" id="prep-file" hidden>
-        </section>
-        <section class="section"><h3>Outreach</h3>
-          <div id="out-box"></div>
-        </section>
-        <section class="section"><h3>Emails <span class="muted small" id="mail-count"></span></h3>
-          <div id="mail-box"><span class="muted">Loading…</span></div>
-        </section>
-        <section class="section"><h3>Timeline</h3>
-          ${actionForm}
-          ${events.length ? `<div class="timeline">${events.map((e) => `
-            <div class="tl-item">
-              <span class="tl-dot ${e.kind}"></span>
-              <div class="what"><b>${esc(e.text)}</b><span>${esc(fmtDate(e.date))}</span></div>
-              ${e.del ? `<button class="icon-btn" data-app-del="${e.del}" aria-label="Remove ${esc(e.text)}" title="Remove">${I.trash()}</button>` : ""}
-            </div>`).join("")}</div>` : `<span class="muted">Nothing yet.</span>`}
-        </section>
       </div>
       <div class="panel-foot">
         ${a.status !== "completed"
