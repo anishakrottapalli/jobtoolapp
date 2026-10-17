@@ -1033,13 +1033,13 @@
       </div>
       ${rows.length ? rows.map(({ a, st }) => `
         <div class="grid-row apps item${a.id === activeId ? " active" : ""}" data-app-id="${esc(a.id)}">
-          <div class="who-cell"><div class="names"><b>${esc(a.position_title)}</b><span><span class="m-co">${esc([a.company, a.location].filter(Boolean).join(" · "))}</span></span></div></div>
+          <div class="who-cell"><div class="names"><b>${esc(a.position_title)}${safeUrl(a.job_url) ? ` <a class="post-link" href="${esc(safeUrl(a.job_url))}" target="_blank" rel="noopener" aria-label="Open job posting for ${esc(a.position_title)}" title="Open job posting">${I.external(12)}</a>` : ""}</b><span><span class="m-co">${esc([a.company, a.location].filter(Boolean).join(" · "))}</span></span></div></div>
           <div class="cell col-company">${esc(a.company)}</div>
           <div class="cell dim col-loc">${esc(a.location)}</div>
           <div class="cell dim col-date">${a.date_applied ? esc(fmtDate(a.date_applied)) : "—"}</div>
           <div class="col-stage"><span class="badge ${st.cls}" ${st.key === "rejected" ? `title="Rejected ${esc(fmtDate(a.rejection_date))}"` : ""}>${esc(st.label)}</span></div>
           <div class="cell dim col-track">${esc(resumeLabel(a))}</div>
-          <div class="col-menu">${safeUrl(a.job_url) ? `<a class="icon-btn" href="${esc(safeUrl(a.job_url))}" target="_blank" rel="noopener" aria-label="Open job posting for ${esc(a.position_title)}" title="Open job posting">${I.external()}</a>` : ""}</div>
+          <div class="col-menu"><a class="btn view-btn" href="#/application/${esc(a.id)}">View</a></div>
         </div>`).join("") : `<div class="empty"><p>No applications match these filters.</p></div>`}`;
     $$("[data-app-sort]", box).forEach((b) => b.addEventListener("click", () => {
       const k = b.dataset.appSort;
