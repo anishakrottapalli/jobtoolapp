@@ -1112,7 +1112,6 @@
         <div class="title">
           <h2 id="panel-title">${esc(a.position_title)}</h2>
           <span class="head-sub">${sub ? esc(sub) : "No company added"}</span>
-          <span class="head-badges"><span class="badge ${st.cls}">${esc(st.label)}</span>${stSub ? `<span class="muted small">${esc(stSub)}</span>` : ""}</span>
         </div>
         <a class="icon-btn" href="#/application/${esc(a.id)}/edit" aria-label="Edit application">${I.pencil()}</a>
         ${closeBtn}
@@ -1136,7 +1135,7 @@
           </div>
           <div class="app-aside">
             ${sec("Overview", 1, `<div class="facts">
-              ${fact("Stage", esc(st.label), st.key === "ghosted" ? "warn" : "")}
+              ${fact("Stage", esc(st.label) + (stSub ? `<small>${esc(stSub)}</small>` : ""), st.key === "ghosted" ? "warn" : "")}
               ${fact("Applied", a.date_applied ? esc(fmtDate(a.date_applied)) + (a.status === "completed" ? `<small>${daysSince(a.date_applied)} days ago</small>` : "") : "")}
               ${fact("Location", esc(a.location))}
               ${fact("Job posting", job ? `<a href="${esc(job)}" target="_blank" rel="noopener">Open posting ↗</a>` : "")}
