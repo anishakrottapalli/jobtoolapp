@@ -1101,6 +1101,11 @@
               <button class="btn" type="button" id="open-resume">Open</button></div>`
         : a.resume_tailored ? `<span class="muted">No file uploaded yet. <a href="#/application/${esc(a.id)}/edit">Upload it</a></span>` : "");
 
+    const tlActions = `<span class="sec-actions">${a.status !== "completed"
+      ? `<button class="btn sm primary" type="button" data-app-act="applied">${I.check(13)} Mark as applied</button>`
+      : `<button class="btn sm primary" type="button" data-app-act="interview">${I.plus(13)} Log interview</button>
+         ${a.rejection_date ? "" : `<button class="btn sm" type="button" data-app-act="reject">Mark rejected</button>`}`}</span>`;
+
     el.innerHTML = `
       <div class="panel-head">
         <span class="avatar lg">${I.briefcase(20)}</span>
@@ -1116,17 +1121,18 @@
         ${flash}
         <div class="app-layout">
           <div class="app-main">
-            ${sec("Notes", 2, a.notes ? `<p class="prose">${esc(a.notes)}</p>` : `<span class="muted">No notes</span>`)}
-            ${sec("Cover letter", 4, a.cover_letter ? docBlock(a.cover_letter, "cover_letter", "cover letter") : `<span class="muted">None added</span>`)}
-            ${sec("Questions", 5, qs.length ? qs.map((x, i) => `
+            ${sec("Job description", 2, a.job_description ? `<div class="prose jd">${esc(a.job_description)}</div>` : `<span class="muted">Not saved. Postings can disappear, so <a href="#/application/${esc(a.id)}/edit">paste the description</a> here.</span>`)}
+            ${sec("Notes", 3, a.notes ? `<p class="prose">${esc(a.notes)}</p>` : `<span class="muted">No notes</span>`)}
+            ${sec("Cover letter", 5, a.cover_letter ? docBlock(a.cover_letter, "cover_letter", "cover letter") : `<span class="muted">None added</span>`)}
+            ${sec("Questions", 6, qs.length ? qs.map((x, i) => `
               <div class="qa">
                 ${x.q ? `<p class="qa-q">${esc(x.q)}</p>` : ""}
                 ${docBlock(x.a, "qa:" + i, "answer")}
               </div>`).join("")
               : `<span class="muted">No questions added. <a href="#/application/${esc(a.id)}/edit">Add questions</a></span>`,
               { right: qs.length ? `<span class="sec-count">${qs.length}</span>` : "" })}
-            ${sec("Outreach", 7, `<div id="out-box"></div>`)}
-            ${sec("Emails", 8, `<div id="mail-box"><span class="muted">Loading…</span></div>`, { right: `<span class="sec-count" id="mail-count"></span>` })}
+            ${sec("Outreach", 8, `<div id="out-box"></div>`)}
+            ${sec("Emails", 9, `<div id="mail-box"><span class="muted">Loading…</span></div>`, { right: `<span class="sec-count" id="mail-count"></span>` })}
           </div>
           <div class="app-aside">
             ${sec("Overview", 1, `<div class="facts">
@@ -1135,26 +1141,18 @@
               ${fact("Location", esc(a.location))}
               ${fact("Job posting", job ? `<a href="${esc(job)}" target="_blank" rel="noopener">Open posting ↗</a>` : "")}
             </div>`, { cls: "overview" })}
-            ${sec("Resume", 3, resumeBody)}
-            ${sec("Interview prep", 6, `<div id="prep-box"><span class="muted">Loading…</span></div><input type="file" id="prep-file" hidden>`)}
-            ${sec("Timeline", 9, `${actionForm}
+            ${sec("Resume", 4, resumeBody)}
+            ${sec("Interview prep", 7, `<div id="prep-box"><span class="muted">Loading…</span></div><input type="file" id="prep-file" hidden>`)}
+            ${sec("Timeline", 10, `${actionForm}
               ${events.length ? `<div class="timeline">${events.map((e) => `
                 <div class="tl-item">
                   <span class="tl-dot ${e.kind}"></span>
                   <div class="what"><b>${esc(e.text)}</b><span>${esc(fmtDate(e.date))}</span></div>
                   ${e.del ? `<button class="icon-btn" data-app-del="${e.del}" aria-label="Remove ${esc(e.text)}" title="Remove">${I.trash()}</button>` : ""}
-                </div>`).join("")}</div>` : `<span class="muted">Nothing yet.</span>`}`)}
+                </div>`).join("")}</div>` : `<span class="muted">Nothing yet.</span>`}`, { right: tlActions })}
           </div>
         </div>
-      </div>
-      <div class="panel-foot">
-        ${a.status !== "completed"
-          ? `<button class="btn primary lg grow" data-app-act="applied">${I.check()} Mark as applied</button>`
-          : `<button class="btn primary lg grow" data-app-act="interview">${I.plus()} Log interview</button>
-             ${a.rejection_date ? "" : `<button class="btn lg" data-app-act="reject">Mark rejected</button>`}`}
-        <a class="btn lg" href="#/application/${esc(a.id)}/edit">Edit</a>
       </div>`;
-
     const openFile = async (path) => {
       // Open the tab right away so the browser doesn't block it, then point it at the file.
       const win = window.open("", "_blank");
@@ -1473,6 +1471,10 @@
           ${text("job_url", "Job posting link", "url", ' placeholder="https://…"')}
           <p class="error" id="title-err" hidden>Position title is required.</p>
         </section>
+        <section class="section"><h3>Job description</h3>
+          <div class="field"><label for="a-job_description" class="sr-only">Job description</label>
+            <textarea id="a-job_description" name="job_description" class="autogrow" rows="6" placeholder="Paste the job description. Postings can disappear.">${esc(a.job_description)}</textarea></div>
+        </section>
         <section class="section"><h3>Status</h3>
           <div class="cols-2">
             <div class="field"><label for="a-status">Status</label>
@@ -1482,7 +1484,9 @@
             ${text("date_applied", "Date applied", "date")}
             ${text("rejection_date", "Rejection date", "date")}
           </div>
-          <span class="muted" style="font-size:12px">Interviews are added from the application's page with "Log interview".</span>
+          <div class="field"><label>Interviews</label>
+            <div id="iv-list"></div>
+            <div><button type="button" class="btn" id="add-iv">${I.plus(15)} Add interview</button></div></div>
         </section>
         <section class="section"><h3>Notes</h3>
           <div class="field"><label for="a-notes" class="sr-only">Notes</label><textarea id="a-notes" name="notes">${esc(a.notes)}</textarea></div>
@@ -1541,6 +1545,19 @@
       $("#file-hint", el).textContent = "The file will be removed when you save.";
     });
 
+    // Interviews: a date per round, added or removed here.
+    const addIv = (d = "") => {
+      const row = document.createElement("div");
+      row.className = "iv-row";
+      row.innerHTML = `<input type="date" class="iv-date" aria-label="Interview date" value="${esc(d)}">
+        <button type="button" class="icon-btn" aria-label="Remove interview" title="Remove">${I.trash(14)}</button>`;
+      $("#iv-list", el).appendChild(row);
+      $("button", row).addEventListener("click", () => row.remove());
+      if (!d) $("input", row).focus();
+    };
+    (a.interview_dates || []).forEach((d) => addIv(d));
+    $("#add-iv", el).addEventListener("click", () => addIv());
+
     // Questions: any number of question/answer pairs.
     let qaSeq = 0;
     const addQa = (x = { q: "", a: "" }, focus = false) => {
@@ -1568,7 +1585,8 @@
         return;
       }
       const fd = new FormData(form);
-      const data = { id: existing ? existing.id : undefined, interview_dates: a.interview_dates || [] };
+      const data = { id: existing ? existing.id : undefined };
+      data.interview_dates = $$(".iv-date", el).map((i) => i.value).filter(Boolean).sort();
       for (const [k, v] of fd.entries()) data[k] = typeof v === "string" ? v.trim() : v;
       data.resume_tailored = data.resume_kind === "tailored";
       data.resume_track = !data.resume_kind || data.resume_tailored ? null : data.resume_kind;
@@ -1787,7 +1805,7 @@
           } catch (err) { /* shown */ }
         });
         const first = formEl.elements[0];
-        if (first && ed) first.focus();
+        if (first && editing) first.focus();
       }
       $$("[data-edit]", body).forEach((b) => b.addEventListener("click", () => { editing = b.dataset.edit; draw(); }));
       $$("[data-del]", body).forEach((b) => b.addEventListener("click", async () => {

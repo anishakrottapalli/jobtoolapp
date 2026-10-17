@@ -11,7 +11,7 @@
   ];
   const INTERACTION_FIELDS = ["contact_id", "kind", "method", "happened_on", "note"];
   const APPLICATION_FIELDS = [
-    "position_title", "company", "location", "job_url", "status", "date_applied", "rejection_date",
+    "position_title", "company", "location", "job_url", "job_description", "status", "date_applied", "rejection_date",
     "interview_dates", "resume_track", "notes", "resume_text", "cover_letter", "application_answers",
     "questions", "resume_tailored", "resume_file_path", "resume_file_name",
   ];

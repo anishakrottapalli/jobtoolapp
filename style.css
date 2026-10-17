@@ -594,3 +594,8 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .fact-v.warn { color: var(--warn); }
 .fact-v .none { color: var(--muted); font-weight: 400; }
 .sec .notes-box { background: var(--card-2); }
+.btn.sm { height: 30px; padding: 0 12px; font-size: 12px; border-radius: 8px; }
+.sec-actions { display: flex; gap: 8px; }
+.jd { max-height: 380px; overflow-y: auto; }
+.iv-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.iv-row input { flex: 1; }
