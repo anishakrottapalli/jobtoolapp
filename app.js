@@ -534,7 +534,6 @@
             <label class="search">${I.search()}
               <span class="sr-only">Search contacts</span>
               <input id="search" type="search" placeholder="Search contacts" autocomplete="off">
-              <span class="kbd">/</span>
             </label>
           </header>
           ${backend.demo ? `<div class="demo-banner">Demo mode: sample data, saved only in this browser. <a href="${location.pathname}">Leave demo</a></div>` : ""}
