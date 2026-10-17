@@ -621,6 +621,7 @@
   function renderPage() {
     const page = $("#page");
     const p = state.route.page;
+    document.body.classList.toggle("on-dashboard", p === "dashboard");
     if (p === "resources") renderResourcesPage(page);
     else if (p === "documents") renderDocumentsPage(page);
     else if (p === "profile") renderProfilePage(page);
