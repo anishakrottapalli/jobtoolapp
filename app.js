@@ -60,11 +60,14 @@
     upload: (s = 17) => svg(s, '<path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>'),
     settings: (s = 17) => svg(s, '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'),
     chevron: (s = 14) => svg(s, '<path d="m6 9 6 6 6-6"/>', 2),
+    arrowLeft: (s = 14) => svg(s, '<path d="M19 12H5M12 19l-7-7 7-7"/>', 2),
     search: (s = 16) => svg(s, '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
     plus: (s = 16) => svg(s, '<path d="M12 5v14M5 12h14"/>', 2.25),
     menu: (s = 18) => svg(s, '<path d="M4 7h16M4 12h16M4 17h16"/>', 2),
     dots: (s = 16) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>`,
     close: (s = 15) => svg(s, '<path d="M18 6 6 18M6 6l12 12"/>', 2),
+    expand: (s = 15) => svg(s, '<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>'),
+    collapse: (s = 15) => svg(s, '<path d="M14 10h6V4M10 14H4v6M20 4l-6 6M4 20l6-6"/>'),
     pencil: (s = 15) => svg(s, '<path d="M4 20h4L19 9l-4-4L4 16v4z"/>'),
     eye: (s = 15) => svg(s, '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
     check: (s = 13) => svg(s, '<path d="m5 12 5 5 9-10"/>', 2.5),
@@ -2187,7 +2190,9 @@
   function renderOverlay() {
     const box = $("#overlay");
     const { panel, id } = state.route;
+    box.classList.toggle("full", !!(panel && panel !== "import" && state.panelFull));
     if (!panel) {
+      state.panelFull = false;
       box.innerHTML = "";
       document.body.style.overflow = "";
       return;
@@ -2208,6 +2213,26 @@
     else if (panel === "import") renderImport(el);
     else if (panel === "app-view") renderAppView(el, record);
     else if (panel === "app-edit") renderAppForm(el, record);
+    const closeEl = $(".panel-head [data-close]", el);
+    if (closeEl && panel !== "import") {
+      const full = state.panelFull;
+      const t = document.createElement("button");
+      t.type = "button";
+      t.className = "icon-btn";
+      t.setAttribute("aria-label", full ? "Back to side view" : "Open as full page");
+      t.title = full ? "Back to side view" : "Open as full page";
+      t.innerHTML = full ? I.collapse() : I.expand();
+      t.addEventListener("click", () => { state.panelFull = !state.panelFull; renderOverlay(); });
+      closeEl.before(t);
+      if (full) {
+        const back = document.createElement("button");
+        back.type = "button";
+        back.className = "btn ghost back-btn";
+        back.innerHTML = `${I.arrowLeft()} Back`;
+        back.addEventListener("click", closePanel);
+        $(".panel-head", el).prepend(back);
+      }
+    }
     $$("[data-close]", box).forEach((b) => b.addEventListener("click", closePanel));
     const focusable = $("[autofocus]", el) || $(".panel-head .icon-btn:last-child", el);
     if (focusable) focusable.focus();
@@ -2646,6 +2671,9 @@
   function route() {
     const prev = state.route;
     state.route = parseRoute();
+    // Remember where the list was scrolled so closing the panel / going back returns there.
+    if (!prev.panel && state.route.panel) state.listScroll = window.scrollY;
+    const closing = prev.panel && !state.route.panel;
     closeRowMenu();
     if (prev.panel === "import" && state.route.panel !== "import") state.importPlan = null;
     if (state.route.panel !== "view") state.logOpen = state.route.panel === "view" && state.logOpen;
@@ -2655,6 +2683,7 @@
     if (prev.page !== state.route.page || !state.route.panel || !($("#rows") || $("#app-rows"))) renderPage();
     else { renderRows(); renderAppRows(); }
     renderOverlay();
+    if (closing && state.listScroll != null && prev.page === state.route.page) window.scrollTo(0, state.listScroll);
   }
 
   async function start() {
