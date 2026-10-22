@@ -599,3 +599,15 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .jd { max-height: 380px; overflow-y: auto; }
 .iv-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .iv-row input { flex: 1; }
+
+/* "People you know at" pop-up */
+.out-people-row { margin-top: 28px; }
+.confirm-box.people-box { width: min(480px, 100%); max-height: min(560px, 85vh); display: flex; flex-direction: column; }
+.people-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.people-head h3 { margin: 0; font-size: 16px; }
+.people-box .out-people { border: none; padding: 0; overflow-y: auto; min-height: 0; }
+.people-box > p { margin: 0 0 12px; }
+
+.iv-mails-head { margin: 12px 0 6px; }
+#iv-mails .mail-row { align-items: center; }
+#iv-mails .mail-row .btn { margin-left: auto; }

@@ -32,12 +32,11 @@
     applications: [],
     appFilters: { q: "", stage: "all", track: "" },
     appSort: { key: "date_applied", dir: -1 },
-    appAction: null,
   };
 
   const TRACKS = [["product", "Product"], ["ea_creative_ops", "EA–Creative Ops"], ["content_media_ops", "Content–Media Ops"]];
   const GHOST_DAYS = 60;
-  const APP_FILTERS = [["all", "All"], ["inplay", "In play"], ["to_start", "To Start"], ["applied", "Applied"],
+  const APP_FILTERS = [["all", "All"], ["inplay", "In play"], ["to_start", "To Start"], ["in_progress", "In progress"], ["applied", "Applied"],
     ["interviewing", "Interviewing"], ["ghosted", "Ghosted"], ["rejected", "Rejected"]];
 
   // ---------- icons (inline stroke SVG) ----------
@@ -511,7 +510,6 @@
             <a class="nav-item" data-nav="dashboard" href="#/">${I.home()}<span>Dashboard</span></a>
             <a class="nav-item" data-nav="contacts" href="#/contacts">${I.users()}<span>Contacts</span><span class="count mono" id="nav-count"></span></a>
             <a class="nav-item" data-nav="applications" href="#/applications">${I.briefcase()}<span>Applications</span><span class="count mono" id="nav-app-count"></span></a>
-            <a class="nav-item" data-nav="documents" href="#/documents">${I.doc(17)}<span>Documents</span></a>
             <a class="nav-item" data-nav="profile" href="#/profile">${I.user()}<span>Profile</span></a>
             <a class="nav-item" data-nav="resources" href="#/resources">${I.book()}<span>Resources</span></a>
             <a class="nav-item" data-nav="vision" href="#/vision">${I.target()}<span>Career Vision</span></a>`)}
@@ -623,7 +621,6 @@
     const p = state.route.page;
     document.body.classList.toggle("on-dashboard", p === "dashboard");
     if (p === "resources") renderResourcesPage(page);
-    else if (p === "documents") renderDocumentsPage(page);
     else if (p === "profile") renderProfilePage(page);
     else if (p === "vision") renderVisionPage(page);
     else if (p === "export") renderExportPage(page);
@@ -921,8 +918,9 @@
   // People in the Contacts tracker who work at this application's company.
   const peopleAt = (a) => state.contacts.filter((c) => sameCompany(c.company, a.company)).sort((x, y) => fullName(x).localeCompare(fullName(y)));
 
-  // Status is To Start / Completed; the stage shown is derived from the dates.
+  // Saved status is to_start / in_progress / completed (= applied); the stage shown after applying is derived from the dates.
   function stageOf(a) {
+    if (a.status === "in_progress") return { key: "in_progress", label: "In progress", cls: "" };
     if (a.status !== "completed") return { key: "to_start", label: "To Start", cls: "" };
     if (a.rejection_date) return { key: "rejected", label: "Rejected", cls: "muted-badge" };
     const rounds = (a.interview_dates || []).length;
@@ -939,7 +937,7 @@
     return {
       total: state.applications.filter((a) => a.status === "completed").length,
       thisWeek: state.applications.filter((a) => a.status === "completed" && a.date_applied >= mondayISO).length,
-      inPlay: stages.filter((s) => s.key !== "rejected" && s.key !== "to_start" && s.key !== "ghosted").length,
+      inPlay: stages.filter((s) => !["rejected", "to_start", "in_progress", "ghosted"].includes(s.key)).length,
       interviewing: stages.filter((s) => s.key === "interviewing").length,
       ghosted: stages.filter((s) => s.key === "ghosted").length,
     };
@@ -949,7 +947,7 @@
     const { q, stage, track } = state.appFilters;
     const match = searchMatcher(q);
     const rows = state.applications.map((a) => ({ a, st: stageOf(a) })).filter(({ a, st }) => {
-      if (stage === "inplay" && (st.key === "rejected" || st.key === "to_start" || st.key === "ghosted")) return false;
+      if (stage === "inplay" && ["rejected", "to_start", "in_progress", "ghosted"].includes(st.key)) return false;
       if (stage !== "all" && stage !== "inplay" && st.key !== stage) return false;
       if (track && resumeChoice(a) !== track) return false;
       if (match) {
@@ -959,7 +957,7 @@
       return true;
     });
     const { key, dir } = state.appSort;
-    const order = { to_start: 0, applied: 1, interviewing: 2, ghosted: 3, rejected: 4 };
+    const order = { to_start: 0, in_progress: 1, applied: 2, interviewing: 3, ghosted: 4, rejected: 5 };
     const val = ({ a, st }) => (key === "stage" ? String(order[st.key]) : key === "resume" ? resumeLabel(a) : a[key] || "");
     rows.sort((x, y) => {
       const vx = val(x), vy = val(y);
@@ -974,7 +972,7 @@
     const header = ["Position Title", "Company", "Location", "Job Link", "Status", "Stage", "Date Applied",
       "Interview Dates", "Rejection Date", "Resume", "Resume File", "Notes", "Cover Letter", "Questions", "Outreach"];
     downloadCsv(`applications-${todayISO()}.csv`, header, list.map(({ a, st }) => [
-      a.position_title, a.company, a.location, a.job_url, a.status === "completed" ? "Completed" : "To Start", st.label,
+      a.position_title, a.company, a.location, a.job_url, a.status === "completed" ? "Applied" : a.status === "in_progress" ? "In progress" : "To Start", st.label,
       a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, resumeLabel(a), a.resume_file_name, a.notes, a.cover_letter, questionsText(a), outreachText(a),
     ]));
   }
@@ -1052,16 +1050,6 @@
     }));
   }
 
-  async function saveApp(el, changes, flash) {
-    const a = state.applications.find((x) => x.id === changes.id);
-    const saved = await run(() => backend.saveApplication({ ...a, ...changes }), el);
-    Object.assign(a, saved);
-    state.flash = flash;
-    state.appAction = null;
-    renderOverlay();
-    renderPage();
-  }
-
   function renderAppView(el, a) {
     const st = stageOf(a);
     const flash = takeFlash();
@@ -1070,24 +1058,16 @@
     const interviews = [...(a.interview_dates || [])].sort();
     const events = [];
     if (a.status === "completed" && a.date_applied) events.push({ date: a.date_applied, text: "Applied", kind: "outreach" });
-    interviews.forEach((d, i) => events.push({ date: d, text: `Interview #${i + 1}`, kind: "reply", del: `interview:${i}` }));
-    if (a.rejection_date) events.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin", del: "rejection" });
+    interviews.forEach((d, i) => events.push({ date: d, text: `Interview #${i + 1}`, kind: "reply" }));
+    if (a.rejection_date) events.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin" });
     events.sort((x, y) => y.date.localeCompare(x.date));
     const qs = questionsOf(a);
     const docBlock = (text, key, label) => `<div class="doc-wrap"><p class="notes-box doc-full">${esc(text)}</p>
       <button class="icon-btn doc-copy" type="button" data-copy-doc="${esc(key)}" title="Copy ${label}" aria-label="Copy ${label}">${I.copy()}</button></div>
       <div class="doc-actions"><span class="muted small">${wordCount(text)} words</span></div>`;
-    const action = state.appAction;
-    const actionForm = action ? `
-      <form class="log-form" id="app-action-form">
-        <div class="field wide"><label for="aa-date">${action === "interview" ? "Interview date" : action === "reject" ? "Rejection date" : "Date applied"}</label>
-          <input id="aa-date" name="date" type="date" required value="${todayISO()}" autofocus></div>
-        <div class="btns"><button type="button" class="btn ghost" id="aa-cancel">Cancel</button>
-          <button class="btn primary" type="submit">${action === "interview" ? "Add interview" : action === "reject" ? "Mark rejected" : "Mark applied"}</button></div>
-      </form>` : "";
 
     el.classList.add("app-panel");
-    const stSub = st.key === "rejected" ? "on " + fmtDate(a.rejection_date) : st.key === "ghosted" ? "No response in " + GHOST_DAYS + "+ days" : st.key === "to_start" ? "Not applied yet" : "";
+    const stSub = st.key === "rejected" ? "on " + fmtDate(a.rejection_date) : st.key === "ghosted" ? "No response in " + GHOST_DAYS + "+ days" : st.key === "to_start" ? "Not applied yet" : st.key === "in_progress" ? "Started, not submitted" : "";
     const fact = (label, value, extra = "") => `<div class="fact"><span class="fact-l">${label}</span><span class="fact-v ${extra}">${value || `<span class="none">—</span>`}</span></div>`;
     const sec = (title, order, body, opts = {}) => `
         <section class="sec${opts.cls ? " " + opts.cls : ""}" style="order:${order}">
@@ -1096,15 +1076,10 @@
         </section>`;
     const resumeBody = (resumeChoice(a)
       ? `<div class="doc-actions"><span class="badge ${a.resume_tailored ? "solid" : ""}">${a.resume_tailored ? "Tailored for this job" : esc(trackLabel(a.resume_track)) + " resume"}</span></div>`
-      : `<span class="muted">Not recorded. <a href="#/application/${esc(a.id)}/edit">Choose the resume</a></span>`)
+      : `<span class="muted">Not recorded</span>`)
       + (a.resume_file_path ? `<div class="file-row">${I.download(15)}<span class="file-name">${esc(a.resume_file_name || "Resume file")}</span>
               <button class="btn" type="button" id="open-resume">Open</button></div>`
-        : a.resume_tailored ? `<span class="muted">No file uploaded yet. <a href="#/application/${esc(a.id)}/edit">Upload it</a></span>` : "");
-
-    const tlActions = `<span class="sec-actions">${a.status !== "completed"
-      ? `<button class="btn sm primary" type="button" data-app-act="applied">${I.check(13)} Mark as applied</button>`
-      : `<button class="btn sm primary" type="button" data-app-act="interview">${I.plus(13)} Log interview</button>
-         ${a.rejection_date ? "" : `<button class="btn sm" type="button" data-app-act="reject">Mark rejected</button>`}`}</span>`;
+        : a.resume_tailored ? `<span class="muted">No file uploaded yet</span>` : "");
 
     el.innerHTML = `
       <div class="panel-head">
@@ -1120,7 +1095,7 @@
         ${flash}
         <div class="app-layout">
           <div class="app-main">
-            ${sec("Job description", 2, a.job_description ? `<div class="prose jd">${esc(a.job_description)}</div>` : `<span class="muted">Not saved. Postings can disappear, so <a href="#/application/${esc(a.id)}/edit">paste the description</a> here.</span>`)}
+            ${sec("Job description", 2, a.job_description ? `<div class="prose jd">${esc(a.job_description)}</div>` : `<span class="muted">None added</span>`)}
             ${sec("Notes", 3, a.notes ? `<p class="prose">${esc(a.notes)}</p>` : `<span class="muted">No notes</span>`)}
             ${sec("Cover letter", 5, a.cover_letter ? docBlock(a.cover_letter, "cover_letter", "cover letter") : `<span class="muted">None added</span>`)}
             ${sec("Questions", 6, qs.length ? qs.map((x, i) => `
@@ -1128,7 +1103,7 @@
                 ${x.q ? `<p class="qa-q">${esc(x.q)}</p>` : ""}
                 ${docBlock(x.a, "qa:" + i, "answer")}
               </div>`).join("")
-              : `<span class="muted">No questions added. <a href="#/application/${esc(a.id)}/edit">Add questions</a></span>`,
+              : `<span class="muted">None added</span>`,
               { right: qs.length ? `<span class="sec-count">${qs.length}</span>` : "" })}
             ${sec("Outreach", 8, `<div id="out-box"></div>`)}
             ${sec("Emails", 9, `<div id="mail-box"><span class="muted">Loading…</span></div>`, { right: `<span class="sec-count" id="mail-count"></span>` })}
@@ -1140,15 +1115,16 @@
               ${fact("Location", esc(a.location))}
               ${fact("Job posting", job ? `<a href="${esc(job)}" target="_blank" rel="noopener">Open posting ↗</a>` : "")}
             </div>`, { cls: "overview" })}
+            ${a.status === "completed" ? "" : sec("Status", 2, `<div class="doc-actions" role="group" aria-label="Status">
+              ${[["to_start", "To Start"], ["in_progress", "In progress"]].map(([v, l]) => `<button type="button" class="btn${(a.status || "to_start") === v ? " primary" : ""}" data-set-status="${v}" aria-pressed="${(a.status || "to_start") === v}">${l}</button>`).join("")}</div>
+              <span class="muted small">Entering a date applied in the edit form marks it Applied.</span>`)}
             ${sec("Resume", 4, resumeBody)}
             ${sec("Interview prep", 7, `<div id="prep-box"><span class="muted">Loading…</span></div><input type="file" id="prep-file" hidden>`)}
-            ${sec("Timeline", 10, `${actionForm}
-              ${events.length ? `<div class="timeline">${events.map((e) => `
+            ${sec("Timeline", 10, events.length ? `<div class="timeline">${events.map((e) => `
                 <div class="tl-item">
                   <span class="tl-dot ${e.kind}"></span>
                   <div class="what"><b>${esc(e.text)}</b><span>${esc(fmtDate(e.date))}</span></div>
-                  ${e.del ? `<button class="icon-btn" data-app-del="${e.del}" aria-label="Remove ${esc(e.text)}" title="Remove">${I.trash()}</button>` : ""}
-                </div>`).join("")}</div>` : `<span class="muted">Nothing yet.</span>`}`, { right: tlActions })}
+                </div>`).join("")}</div>` : `<span class="muted">Nothing yet.</span>`)}
           </div>
         </div>
       </div>`;
@@ -1163,6 +1139,13 @@
         alert("Couldn't open the file: " + err.message);
       }
     };
+    $$("[data-set-status]", el).forEach((b) => b.addEventListener("click", async () => {
+      if (b.dataset.setStatus === (a.status || "to_start")) return;
+      const saved = await run(() => backend.saveApplication({ ...a, status: b.dataset.setStatus }), el);
+      Object.assign(a, saved);
+      renderOverlay();
+      renderPage();
+    }));
     const openBtn = $("#open-resume", el);
     if (openBtn) openBtn.addEventListener("click", () => openFile(a.resume_file_path));
 
@@ -1178,8 +1161,7 @@
              <button class="btn" type="button" data-prep="replace">Replace</button>
              <button class="btn ghost" type="button" data-prep="remove" aria-label="Remove interview prep">${I.trash(14)}</button></div>
            <span class="muted small">Edit the doc, then Replace it with the new version.</span>`
-        : `<div class="doc-actions"><span class="muted">No interview prep doc yet.</span>
-             <button class="btn" type="button" data-prep="replace">${I.plus(14)} Upload doc</button></div>`;
+        : `<span class="muted">No interview prep doc yet</span>`;
       $$("[data-prep]", prepBox).forEach((b) => b.addEventListener("click", async () => {
         const act = b.dataset.prep;
         if (act === "open") openFile(f.path);
@@ -1274,26 +1256,50 @@
             ${adding ? `<li class="editing">${entryForm(null, g.id, ed.prefill, ed.contactId)}</li>` : ""}</ul>` : `<span class="muted">Nothing logged yet</span>`}
           ${adding ? "" : `<div><button type="button" class="btn ghost" data-out-add="${esc(g.id)}">+ Add</button></div>`}</div>`;
       };
-      const people = a.company ? peopleAt(a) : [];
-      const added = new Set(outreachOf(a.id).map((o) => o.name.trim().toLowerCase()));
-      const linked = new Set(outreachOf(a.id).map((o) => o.contact_id).filter(Boolean));
-      const peopleHtml = state.outreachPeople === a.id ? `<div class="out-people">${people.length ? people.map((c) => `
-          <div class="out-person"><div class="out-who"><b>${esc(fullName(c))}</b><span class="muted small">${esc([c.job_title, c.location].filter(Boolean).join(" · "))}</span></div>
-            ${linked.has(c.id) || added.has(fullName(c).toLowerCase()) ? `<span class="badge">In log</span>`
-              : groups.length ? `<button type="button" class="btn" data-out-person="${esc(c.id)}">+ Add</button>` : ""}</div>`).join("")
-          + (groups.length ? "" : `<span class="muted small">Create a group below to add people to the log.</span>`)
-          : `<span class="muted">No one at ${esc(a.company)} in your Contacts yet.</span>`}</div>` : "";
       const newGroup = ed && ed.type === "newgroup";
-      outBox.innerHTML = (a.company ? `<div class="doc-actions"><button class="btn" type="button" id="out-people" aria-expanded="${state.outreachPeople === a.id}">People you know at ${esc(a.company)}</button></div>` : "")
-        + peopleHtml
-        + (groups.length ? groups.map(groupHtml).join("") : groupForm(null, true))
+      outBox.innerHTML = (groups.length ? groups.map(groupHtml).join("") : groupForm(null, true))
         + (!groups.length ? "" : newGroup ? groupForm(null)
-          : `<div class="doc-actions"><button type="button" class="btn ghost" data-out-gadd>+ Add group</button></div>`);
+          : `<div class="doc-actions"><button type="button" class="btn ghost" data-out-gadd>+ Add group</button></div>`)
+        + (a.company ? `<div class="doc-actions out-people-row"><button class="btn" type="button" id="out-people">People you know at ${esc(a.company)}</button></div>` : "");
       $$("textarea.autogrow", outBox).forEach(autogrowTa);
       const first = $("[data-out-form] input", outBox);
       if (first && ed) first.focus();
     };
     const editOutreach = (v) => { state.outreachEdit = v && { appId: a.id, ...v }; renderOutreach(); };
+    // Pop-up list of Contacts who work at this application's company; "+ Add" opens a prefilled entry in the first group.
+    const openPeople = () => {
+      const groups = groupsOf(a.id);
+      const people = peopleAt(a);
+      const added = new Set(outreachOf(a.id).map((o) => o.name.trim().toLowerCase()));
+      const linked = new Set(outreachOf(a.id).map((o) => o.contact_id).filter(Boolean));
+      const scrim = document.createElement("div");
+      scrim.className = "confirm-scrim";
+      scrim.innerHTML = `
+        <div class="confirm-box people-box" role="dialog" aria-modal="true" aria-label="People you know at ${esc(a.company)}">
+          <div class="people-head"><h3>People you know at ${esc(a.company)}</h3>
+            <button class="icon-btn" type="button" data-close-people aria-label="Close">${I.close()}</button></div>
+          ${groups.length ? "" : `<p class="muted small">Create a group in the outreach log first to add people to it.</p>`}
+          <div class="out-people">${people.length ? people.map((c) => `
+            <div class="out-person"><div class="out-who"><b>${esc(fullName(c))}</b><span class="muted small">${esc([c.job_title, c.location].filter(Boolean).join(" · "))}</span></div>
+              ${linked.has(c.id) || added.has(fullName(c).toLowerCase()) ? `<span class="badge">In log</span>`
+                : groups.length ? `<button type="button" class="btn" data-out-person="${esc(c.id)}">+ Add</button>` : ""}</div>`).join("")
+            : `<span class="muted">No one at ${esc(a.company)} in your Contacts yet.</span>`}</div>
+        </div>`;
+      const close = () => { document.removeEventListener("keydown", onKey, true); scrim.remove(); };
+      const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
+      document.addEventListener("keydown", onKey, true);
+      scrim.addEventListener("click", (e) => {
+        if (e.target === scrim || e.target.closest("[data-close-people]")) return close();
+        const b = e.target.closest("[data-out-person]");
+        if (!b) return;
+        const c = state.contacts.find((x) => x.id === b.dataset.outPerson);
+        close();
+        editOutreach({ type: "entry", id: null, group: groupsOf(a.id)[0].id, contactId: c.id,
+          prefill: { name: fullName(c), title_company: [c.job_title, c.company].filter(Boolean).join(", ") } });
+      });
+      document.body.appendChild(scrim);
+      $("[data-close-people]", scrim).focus();
+    };
     // Move one item up/down in its list: renumber, save what changed, undo on failure.
     const moveInList = async (list, id, dir, save) => {
       const i = list.findIndex((x) => x.id === id), j = i + dir;
@@ -1330,12 +1336,8 @@
       const t = e.target.closest("button, [data-out-edit]");
       if (!t || !outBox.contains(t)) return;
       const d = t.dataset;
-      if (t.id === "out-people") { state.outreachPeople = state.outreachPeople === a.id ? null : a.id; renderOutreach(); }
-      else if (d.outPerson) {
-        const c = state.contacts.find((x) => x.id === d.outPerson);
-        const tc = [c.job_title, c.company].filter(Boolean).join(", ");
-        editOutreach({ type: "entry", id: null, group: groupsOf(a.id)[0].id, contactId: c.id, prefill: { name: fullName(c), title_company: tc } });
-      } else if (d.outAdd) editOutreach({ type: "entry", id: null, group: d.outAdd });
+      if (t.id === "out-people") openPeople();
+      else if (d.outAdd) editOutreach({ type: "entry", id: null, group: d.outAdd });
       else if (d.outHist) editOutreach({ type: "history", id: d.outHist });
       else if (d.outSave) saveToContacts(state.outreach.find((x) => x.id === d.outSave));
       else if (d.outEdit) editOutreach({ type: "entry", id: d.outEdit, group: state.outreach.find((x) => x.id === d.outEdit).group_id });
@@ -1426,32 +1428,6 @@
       b.title = "Copied";
       setTimeout(() => { b.innerHTML = label; b.title = b.getAttribute("aria-label"); }, 1500);
     }));
-    $$("[data-app-act]", el).forEach((b) => b.addEventListener("click", () => {
-      state.appAction = b.dataset.appAct === "applied" ? "applied" : b.dataset.appAct;
-      renderAppView(el, a);
-      const d = $("#aa-date", el);
-      if (d) d.focus();
-    }));
-    const form = $("#app-action-form", el);
-    if (form) {
-      $("#aa-cancel", el).addEventListener("click", () => { state.appAction = null; renderAppView(el, a); });
-      form.addEventListener("submit", (e) => {
-        e.preventDefault();
-        const date = form.date.value;
-        if (action === "interview") saveApp(el, { id: a.id, interview_dates: [...(a.interview_dates || []), date].sort() }, "Interview added.");
-        else if (action === "reject") saveApp(el, { id: a.id, rejection_date: date }, "Marked as rejected.");
-        else saveApp(el, { id: a.id, status: "completed", date_applied: date }, "Marked as applied.");
-      });
-    }
-    $$("[data-app-del]", el).forEach((b) => b.addEventListener("click", async () => {
-      const what = b.dataset.appDel;
-      if (!(await confirmBox(what === "rejection" ? "Remove the rejection? The application goes back in play." : "Remove this interview?", "Remove"))) return;
-      if (what === "rejection") saveApp(el, { id: a.id, rejection_date: null }, "Rejection removed.");
-      else {
-        const i = Number(what.split(":")[1]);
-        saveApp(el, { id: a.id, interview_dates: interviews.filter((_, j) => j !== i) }, "Interview removed.");
-      }
-    }));
   }
 
   function renderAppForm(el, existing) {
@@ -1477,15 +1453,16 @@
         <section class="section"><h3>Status</h3>
           <div class="cols-2">
             <div class="field"><label for="a-status">Status</label>
-              <select id="a-status" name="status">${options([["to_start", "To Start"], ["completed", "Completed (applied)"]], a.status)}</select></div>
+              <select id="a-status" name="status">${options([["to_start", "To Start"], ["in_progress", "In progress"], ["completed", "Applied"]], a.status)}</select></div>
+            ${text("date_applied", "Date applied", "date")}
           </div>
           <div class="cols-2" id="applied-fields"${a.status === "completed" ? "" : " hidden"}>
-            ${text("date_applied", "Date applied", "date")}
             ${text("rejection_date", "Rejection date", "date")}
           </div>
           <div class="field"><label>Interviews</label>
             <div id="iv-list"></div>
-            <div><button type="button" class="btn" id="add-iv">${I.plus(15)} Add interview</button></div></div>
+            <div><button type="button" class="btn" id="add-iv">${I.plus(15)} Add interview</button></div>
+            <div id="iv-mails"></div></div>
         </section>
         <section class="section"><h3>Notes</h3>
           <div class="field"><label for="a-notes" class="sr-only">Notes</label><textarea id="a-notes" name="notes">${esc(a.notes)}</textarea></div>
@@ -1527,10 +1504,18 @@
     $$("textarea.autogrow", el).forEach(autogrow);
 
     // Date applied and rejection date only apply once the job is completed (applied).
+    // Entering a date applied marks the application Applied; clearing it takes it back to To Start.
     $("#a-status", el).addEventListener("change", (e) => {
       const done = e.target.value === "completed";
       $("#applied-fields", el).hidden = !done;
       if (done && !form.date_applied.value) form.date_applied.value = todayISO();
+      if (!done) form.date_applied.value = "";
+    });
+    form.date_applied.addEventListener("input", () => {
+      const sel = $("#a-status", el);
+      if (form.date_applied.value) sel.value = "completed";
+      else if (sel.value === "completed") sel.value = "to_start";
+      $("#applied-fields", el).hidden = sel.value !== "completed";
     });
 
     // Resume: general vs tailored, with an optional uploaded file.
@@ -1556,6 +1541,27 @@
     };
     (a.interview_dates || []).forEach((d) => addIv(d));
     $("#add-iv", el).addEventListener("click", () => addIv());
+    // Emails the Gmail sync matched to this application: pick one to add its date as an interview
+    // (the interview itself is usually later, so the date can be changed afterwards).
+    if (existing) (async () => {
+      let mails = [];
+      try { mails = await backend.listApplicationEmails(a.id); } catch (e) { /* table not created yet */ }
+      const box = $("#iv-mails", el);
+      if (!box || !mails.length) return;
+      const have = () => new Set($$(".iv-date", el).map((i) => i.value));
+      box.innerHTML = `<p class="muted small iv-mails-head">From your emails. Add the date of an interview, then adjust it if the interview is on a different day.</p>
+        <div class="mail-list">${mails.slice(0, 10).map((m) => `
+          <div class="mail-row"><span class="badge ${m.direction === "out" ? "" : "yes"}">${m.direction === "out" ? "Sent" : "Received"}</span>
+            <span class="mail-who">${esc(m.counterpart || "")}</span><span class="muted small">${esc(fmtDate(m.happened_on))}</span>
+            <button type="button" class="btn sm" data-mail-iv="${esc(m.happened_on)}">${I.plus(13)} Add as interview</button></div>`).join("")}</div>`;
+      box.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-mail-iv]");
+        if (!b) return;
+        if (!have().has(b.dataset.mailIv)) addIv(b.dataset.mailIv);
+        b.disabled = true;
+        b.textContent = "Added";
+      });
+    })();
 
     // Questions: any number of question/answer pairs.
     let qaSeq = 0;
@@ -1590,6 +1596,7 @@
       data.resume_tailored = data.resume_kind === "tailored";
       data.resume_track = !data.resume_kind || data.resume_tailored ? null : data.resume_kind;
       delete data.resume_kind;
+      if (data.date_applied) data.status = "completed";
       const done = data.status === "completed";
       data.date_applied = done ? data.date_applied || todayISO() : null;
       data.rejection_date = done ? data.rejection_date || null : null;
@@ -1857,22 +1864,18 @@
     })();
   }
 
-  function renderDocumentsPage(page) {
-    page.innerHTML = pageHead("Documents", "Files you store and pull up when you need them.")
-      + block("doc-letters", "Recommendation letters", "Letters from managers, professors and mentors.", uploadBtn);
-    mountFiles($("#doc-letters", page), "documents", "letters", "No letters yet. Upload a PDF or Word file.");
-  }
-
-  // Profile is a hub of cards; each card opens its own page (#/profile/resume, /skills, /references).
+  // Profile is a hub of cards; each card opens its own page (#/profile/resume, /skills, /references, /certificates).
   function renderProfilePage(page) {
     const sub = state.route.sub;
     if (sub === "resume") return renderResumePage(page);
     if (sub === "skills") return renderSkillsPage(page);
     if (sub === "references") return renderReferencesPage(page);
+    if (sub === "certificates") return renderCertificatesPage(page);
     const cards = [
       ["resume", I.doc(22), "Resume", "Every version of your resume, plus the content behind it: summary, work history and projects."],
       ["skills", I.target(22), "Skills", "What you can do, grouped by area."],
-      ["references", I.user(22), "References", "People who've agreed to vouch for you."],
+      ["references", I.user(22), "References", "People who've agreed to vouch for you, and their recommendation letters."],
+      ["certificates", I.check(22), "Certificates", "Courses and credentials you've earned, with the files."],
     ];
     page.innerHTML = pageHead("Profile", "Details about you that you reuse in applications and outreach.")
       + `<div class="hub-grid">${cards.map(([key, icon, title, desc]) => `
@@ -1887,6 +1890,7 @@
     backend.listFiles("documents", "resumes").then((r) => count("resume", plural(r.length, "version", "versions"))).catch(() => {});
     backend.listItems("skill").then((r) => count("skills", plural(r.length, "skill", "skills"))).catch(() => {});
     backend.listItems("reference").then((r) => count("references", plural(r.length, "reference", "references"))).catch(() => {});
+    backend.listItems("certificate").then((r) => count("certificates", plural(r.length, "certificate", "certificates"))).catch(() => {});
   }
 
   const subHead = (title, intro) =>
@@ -1947,7 +1951,9 @@
 
   function renderReferencesPage(page) {
     page.innerHTML = subHead("References", "People who've agreed to vouch for you.")
-      + block("pf-refs", "References", "Check with someone before listing them for a new application.", addBtn("Add reference"));
+      + block("pf-refs", "References", "Check with someone before listing them for a new application.", addBtn("Add reference"))
+      + block("pf-letters", "Recommendation letters", "Letters from managers, professors and mentors.", uploadBtn);
+    mountFiles($("#pf-letters", page), "documents", "letters", "No letters yet. Upload a PDF or Word file.");
     mountItems($("#pf-refs", page), "reference", {
       empty: "No references yet.",
       sort: (a, b) => a.name.localeCompare(b.name),
@@ -1966,6 +1972,28 @@
         ${d.email ? `<a href="mailto:${esc(d.email)}" class="item-sub">${esc(d.email)}</a>` : ""}
         ${d.phone ? `<span class="item-sub">${esc(d.phone)}</span>` : ""}
         ${d.notes ? `<span class="item-text">${esc(d.notes)}</span>` : ""}`,
+    });
+  }
+
+  function renderCertificatesPage(page) {
+    page.innerHTML = subHead("Certificates", "Courses and credentials you've earned.")
+      + block("pf-certs", "Certificates", "Name, who issued it and when, so you can list them on applications.", addBtn("Add certificate"))
+      + block("pf-cert-files", "Certificate files", "PDFs or images of the certificates themselves.", uploadBtn);
+    mountFiles($("#pf-cert-files", page), "documents", "certificates", "No certificate files yet. Upload a PDF or image.", ".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg");
+    mountItems($("#pf-certs", page), "certificate", {
+      empty: "No certificates yet.",
+      sort: (a, b) => (b.date || "").localeCompare(a.date || ""),
+      fields: [
+        { name: "name", label: "Certificate", required: true, placeholder: "e.g. Google Project Management" },
+        { name: "issuer", label: "Issued by", placeholder: "e.g. Coursera" },
+        { name: "date", label: "Date earned", type: "date" },
+        { name: "expires", label: "Expires (optional)", type: "date" },
+        { name: "url", label: "Credential link (optional)", type: "url", placeholder: "https://…" },
+      ],
+      render: (d) => `<b>${esc(d.name)}</b>
+        ${d.issuer ? `<span class="item-sub">${esc(d.issuer)}</span>` : ""}
+        ${d.date || d.expires ? `<span class="item-sub">${esc([d.date && "Earned " + fmtDate(d.date), d.expires && "Expires " + fmtDate(d.expires)].filter(Boolean).join(" · "))}</span>` : ""}
+        ${safeUrl(d.url) ? `<a href="${esc(safeUrl(d.url))}" target="_blank" rel="noopener" class="item-sub">View credential ↗</a>` : ""}`,
     });
   }
 
@@ -2675,9 +2703,8 @@
     if (h === "/applications") return { page: "applications" };
     if (h === "/tags") return { page: "contacts" };
     if (h === "/resources") return { page: "resources" };
-    if (h === "/documents") return { page: "documents" };
     if (h === "/profile") return { page: "profile" };
-    if ((m = h.match(/^\/profile\/(resume|skills|references)$/))) return { page: "profile", sub: m[1] };
+    if ((m = h.match(/^\/profile\/(resume|skills|references|certificates)$/))) return { page: "profile", sub: m[1] };
     if (h === "/vision") return { page: "vision" };
     if (h === "/export") return { page: "export" };
     if (h === "/settings") return { page: "settings" };
@@ -2696,7 +2723,6 @@
     if (prev.panel === "import" && state.route.panel !== "import") state.importPlan = null;
     if (state.route.panel !== "view") state.logOpen = state.route.panel === "view" && state.logOpen;
     if (!(state.route.panel === "edit" && !state.route.id)) state.contactDraft = null;
-    if (prev.panel !== state.route.panel || prev.id !== state.route.id) state.appAction = null;
     // Re-render the page underneath only when it changed or the panel closed (data may have changed).
     if (prev.page !== state.route.page || !state.route.panel || !($("#rows") || $("#app-rows"))) renderPage();
     else { renderRows(); renderAppRows(); }
