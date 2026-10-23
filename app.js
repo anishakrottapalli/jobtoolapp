@@ -858,7 +858,6 @@
     menu.className = "row-menu";
     menu.setAttribute("role", "menu");
     menu.innerHTML = `
-      <button role="menuitem" data-go="#/contact/${esc(id)}">${I.eye()} View details</button>
       <button role="menuitem" data-go="#/contact/${esc(id)}/edit">${I.pencil()} Edit</button>
       <button role="menuitem" data-go="#/contact/${esc(id)}" data-log="1">${I.plus(15)} Log outreach</button>`;
     document.body.appendChild(menu);
@@ -1027,7 +1026,7 @@
     box.innerHTML = `
       <div class="grid-row apps head">
         ${head("position_title", "Position")}${head("company", "Company")}<span class="col-loc">${head("location", "Location")}</span>
-        ${head("date_applied", "Applied")}${head("stage", "Stage")}<span class="col-track">${head("resume", "Resume")}</span><span></span>
+        ${head("date_applied", "Applied")}${head("stage", "Stage")}<span class="col-track">${head("resume", "Resume")}</span>
       </div>
       ${rows.length ? rows.map(({ a, st }) => `
         <div class="grid-row apps item${a.id === activeId ? " active" : ""}" data-app-id="${esc(a.id)}">
@@ -1037,7 +1036,6 @@
           <div class="cell dim col-date">${a.date_applied ? esc(fmtDate(a.date_applied)) : "—"}</div>
           <div class="col-stage"><span class="badge ${st.cls}" ${st.key === "rejected" ? `title="Rejected ${esc(fmtDate(a.rejection_date))}"` : ""}>${esc(st.label)}</span></div>
           <div class="cell dim col-track">${esc(resumeLabel(a))}</div>
-          <div class="col-menu"><a class="btn view-btn" href="#/application/${esc(a.id)}">View</a></div>
         </div>`).join("") : `<div class="empty"><p>No applications match these filters.</p></div>`}`;
     $$("[data-app-sort]", box).forEach((b) => b.addEventListener("click", () => {
       const k = b.dataset.appSort;
