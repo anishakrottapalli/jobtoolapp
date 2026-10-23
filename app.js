@@ -1030,7 +1030,7 @@
       </div>
       ${rows.length ? rows.map(({ a, st }) => `
         <div class="grid-row apps item${a.id === activeId ? " active" : ""}" data-app-id="${esc(a.id)}">
-          <div class="who-cell"><div class="names"><b>${esc(a.position_title)}${safeUrl(a.job_url) ? ` <a class="post-link" href="${esc(safeUrl(a.job_url))}" target="_blank" rel="noopener" aria-label="Open job posting for ${esc(a.position_title)}" title="Open job posting">${I.external(12)}</a>` : ""}</b><span><span class="m-co">${esc([a.company, a.location].filter(Boolean).join(" · "))}</span></span></div></div>
+          <div class="who-cell"><div class="names"><b>${esc(a.position_title)}</b><span><span class="m-co">${esc([a.company, a.location].filter(Boolean).join(" · "))}</span></span></div></div>
           <div class="cell col-company">${esc(a.company)}</div>
           <div class="cell dim col-loc">${esc(a.location)}</div>
           <div class="cell dim col-date">${a.date_applied ? esc(fmtDate(a.date_applied)) : "—"}</div>
@@ -1258,7 +1258,7 @@
       outBox.innerHTML = (groups.length ? groups.map(groupHtml).join("") : groupForm(null, true))
         + (!groups.length ? "" : newGroup ? groupForm(null)
           : `<div class="doc-actions"><button type="button" class="btn ghost" data-out-gadd>+ Add group</button></div>`)
-        + (a.company ? `<div class="doc-actions out-people-row"><button class="btn" type="button" id="out-people">People you know at ${esc(a.company)}</button></div>` : "");
+        + (a.company && peopleAt(a).length ? `<div class="doc-actions out-people-row"><button class="btn" type="button" id="out-people">People you know at ${esc(a.company)}</button></div>` : "");
       $$("textarea.autogrow", outBox).forEach(autogrowTa);
       const first = $("[data-out-form] input", outBox);
       if (first && ed) first.focus();
@@ -1268,13 +1268,14 @@
     const openPeople = () => {
       const groups = groupsOf(a.id);
       const people = peopleAt(a);
+      const heading = `People you know at ${a.company}`;
       const added = new Set(outreachOf(a.id).map((o) => o.name.trim().toLowerCase()));
       const linked = new Set(outreachOf(a.id).map((o) => o.contact_id).filter(Boolean));
       const scrim = document.createElement("div");
       scrim.className = "confirm-scrim";
       scrim.innerHTML = `
-        <div class="confirm-box people-box" role="dialog" aria-modal="true" aria-label="People you know at ${esc(a.company)}">
-          <div class="people-head"><h3>People you know at ${esc(a.company)}</h3>
+        <div class="confirm-box people-box" role="dialog" aria-modal="true" aria-label="${esc(heading)}">
+          <div class="people-head"><h3>${esc(heading)}</h3>
             <button class="icon-btn" type="button" data-close-people aria-label="Close">${I.close()}</button></div>
           ${groups.length ? "" : `<p class="muted small">Create a group in the outreach log first to add people to it.</p>`}
           <div class="out-people">${people.length ? people.map((c) => `
