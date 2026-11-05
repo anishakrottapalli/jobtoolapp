@@ -1402,7 +1402,7 @@
           </form>`;
         return `<div class="out-actions">${c
           ? `<a href="#/contact/${esc(c.id)}">View contact</a><button type="button" class="linkbtn" data-out-hist="${esc(o.id)}">Log to contact history</button>${state.outreachLogged === o.id ? `<span class="muted small">Logged ✓</span>` : ""}`
-          : `<span class="muted small">Not in Contacts</span><button type="button" class="linkbtn" data-out-save="${esc(o.id)}">Save to Contacts</button>`}</div>`;
+          : `<span class="muted small">Not in Contacts</span><button type="button" class="linkbtn" data-out-edit="${esc(o.id)}">Link to a contact</button><button type="button" class="linkbtn" data-out-save="${esc(o.id)}">Save to Contacts</button>`}</div>`;
       };
       const groupHtml = (g, gi) => {
         const list = outreachOf(a.id, g.id);
@@ -1587,6 +1587,13 @@
       if (existing) Object.assign(existing, saved); else state.outreach.push(saved);
       editOutreach(null);
       if (!existing && f.to_contacts && f.to_contacts.checked) saveToContacts(saved);
+    });
+    // Entries typed before names could link to Contacts: link any whose name matches a contact exactly.
+    outreachOf(a.id).filter((o) => !(o.contact_id && state.contacts.some((c) => c.id === o.contact_id))).forEach((o) => {
+      const c = contactByName(o.name);
+      if (!c) return;
+      o.contact_id = c.id;
+      backend.saveOutreach({ id: o.id, contact_id: c.id }).catch(() => {});
     });
     renderOutreach();
     // Emails from the Jobs folder, matched to this application by the Gmail sync.
