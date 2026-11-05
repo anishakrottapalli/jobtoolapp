@@ -1720,14 +1720,14 @@
           ${text("job_url", "Job posting link", "url", ' placeholder="https://…"')}
           <p class="error" id="title-err" hidden>Position title is required.</p>
         </section>
-        <section class="section"><h3>Job description</h3>
-          <div class="field"><label for="a-job_description" class="sr-only">Job description</label>
-            <textarea id="a-job_description" name="job_description" class="autogrow" rows="6" placeholder="Paste the job description. Postings can disappear.">${esc(a.job_description)}</textarea></div>
-        </section>
         <section class="section"><h3>Status</h3>
           <div class="cols-2">
-            <div class="field"><label for="a-status">Status</label>
-              <select id="a-status" name="status">${options([["to_start", "To Start"], ["in_progress", "In progress"], ["completed", "Applied"]], a.status)}</select></div>
+            <div class="field"><span class="label" id="a-status-label">Status</span>
+              <input type="hidden" id="a-status" name="status" value="${esc(a.status || "to_start")}">
+              <div class="status-btns" role="group" aria-labelledby="a-status-label">
+                ${[["to_start", "To Start"], ["in_progress", "In progress"], ["completed", "Applied"]].map(([v, l]) =>
+                  `<button type="button" class="btn${(a.status || "to_start") === v ? " primary" : ""}" data-form-status="${v}" aria-pressed="${(a.status || "to_start") === v}">${l}</button>`).join("")}
+              </div></div>
             ${text("date_applied", "Date applied", "date")}
           </div>
           <div class="cols-2" id="applied-fields"${a.status === "completed" ? "" : " hidden"}>
@@ -1737,6 +1737,10 @@
             <div id="iv-list"></div>
             <div><button type="button" class="btn" id="add-iv">${I.plus(15)} Add interview</button></div>
             <div id="iv-mails"></div></div>
+        </section>
+        <section class="section"><h3>Job description</h3>
+          <div class="field"><label for="a-job_description" class="sr-only">Job description</label>
+            <textarea id="a-job_description" name="job_description" class="autogrow" rows="6" placeholder="Paste the job description. Postings can disappear.">${esc(a.job_description)}</textarea></div>
         </section>
         <section class="section"><h3>Notes</h3>
           <div class="field"><label for="a-notes" class="sr-only">Notes</label><textarea id="a-notes" name="notes">${esc(a.notes)}</textarea></div>
@@ -1779,17 +1783,26 @@
 
     // Date applied and rejection date only apply once the job is completed (applied).
     // Entering a date applied marks the application Applied; clearing it takes it back to To Start.
-    $("#a-status", el).addEventListener("change", (e) => {
-      const done = e.target.value === "completed";
+    const statusInput = $("#a-status", el);
+    const setStatus = (v) => {
+      statusInput.value = v;
+      $$("[data-form-status]", el).forEach((b) => {
+        const on = b.dataset.formStatus === v;
+        b.classList.toggle("primary", on);
+        b.setAttribute("aria-pressed", String(on));
+      });
+      const done = v === "completed";
       $("#applied-fields", el).hidden = !done;
+      return done;
+    };
+    $$("[data-form-status]", el).forEach((b) => b.addEventListener("click", () => {
+      const done = setStatus(b.dataset.formStatus);
       if (done && !form.date_applied.value) form.date_applied.value = todayISO();
       if (!done) form.date_applied.value = "";
-    });
+    }));
     form.date_applied.addEventListener("input", () => {
-      const sel = $("#a-status", el);
-      if (form.date_applied.value) sel.value = "completed";
-      else if (sel.value === "completed") sel.value = "to_start";
-      $("#applied-fields", el).hidden = sel.value !== "completed";
+      if (form.date_applied.value) setStatus("completed");
+      else if (statusInput.value === "completed") setStatus("to_start");
     });
 
     // Resume: general vs tailored, with an optional uploaded file.
