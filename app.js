@@ -2103,6 +2103,7 @@
         const first = formEl.elements[0];
         if (first && editing) first.focus();
       }
+      if (cfg.onDraw) cfg.onDraw(items.map((x) => x.data));
       $$("[data-edit]", body).forEach((b) => b.addEventListener("click", () => { editing = b.dataset.edit; draw(); }));
       $$("[data-del]", body).forEach((b) => b.addEventListener("click", async () => {
         if (!(await confirmBox("Delete this?"))) return;
@@ -2360,43 +2361,64 @@
     });
   }
 
+  // Career Vision: the jobs you're aiming for, and a path from where you are to the top one.
+  // The app has no AI, so each title is placed on a seniority ladder by the words in it ("Associate", "Senior", "Director"...).
+  // Anything it gets wrong can be fixed with the Level menu on that job.
+  const LEVELS = ["Entry level", "Early career", "Mid level", "Senior", "Leadership", "Executive"];
+  const LEVEL_WORDS = [ // checked from the top down; the first match wins
+    [5, ["chief", "ceo", "cto", "cpo", "coo", "cmo", "cfo", "vp", "svp", "evp", "vice", "president", "founder"]],
+    [4, ["director", "head", "gm", "partner"]],
+    [3, ["senior", "sr", "staff", "principal", "lead"]],
+    [0, ["intern", "internship", "assistant", "associate", "junior", "jr", "coordinator", "trainee", "apprentice", "entry", "fellow"]],
+    [1, ["analyst", "specialist", "representative", "rep", "executive"]],
+  ];
+  function levelOf(d) {
+    const picked = LEVELS.indexOf(d.level);
+    if (picked >= 0) return picked;
+    const words = (d.title || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ");
+    for (const [lvl, keys] of LEVEL_WORDS) if (keys.some((k) => words.includes(k))) return lvl;
+    return 2; // Manager, Engineer, Designer... with no other clue
+  }
+
   function renderVisionPage(page) {
-    page.innerHTML = pageHead("Career Vision", "Where you're headed.")
-      + block("cv-dream", "Dream job", "Describe it: the role, the kind of company, what a good day looks like.", "")
-      + block("cv-road", "Career roadmap", "The steps between here and there.", addBtn("Add milestone"));
-    mountNote($("#cv-dream", page), "dream_job", "Role, industry, team size, responsibilities, location, what matters most...");
-    const rank = { "In progress": 0, Planned: 1, Done: 2 };
-    const byDate = (a, b) => (a.target || "9999").localeCompare(b.target || "9999");
-    mountItems($("#cv-road", page), "milestone", {
-      empty: "No milestones yet. Add the next step.",
-      gridClass: "roadmap",
-      // A path from top to bottom in date order; the dot on each step shows where it stands.
-      sort: (a, b) => byDate(a, b) || (rank[b.status] ?? 1) - (rank[a.status] ?? 1),
-      summary: (list) => {
-        const done = list.filter((d) => d.status === "Done").length;
-        const doing = list.filter((d) => d.status === "In progress").length;
-        const next = list.filter((d) => d.status !== "Done").sort((a, b) => (rank[a.status] ?? 1) - (rank[b.status] ?? 1) || byDate(a, b))[0];
-        return `<div class="card rm-summary">
-          <div class="rm-bar" role="img" aria-label="${done} of ${list.length} milestones done"><span style="width:${Math.round((done / list.length) * 100)}%"></span></div>
-          <div class="rm-meta"><b>${done} of ${list.length} done</b>
-            <span class="muted">${doing ? doing + " in progress · " : ""}${next ? "Next: " + esc(next.title) : "All milestones done"}</span></div></div>`;
-      },
+    page.innerHTML = pageHead("Career Vision", "The jobs you're aiming for, and the path to get there.")
+      + block("cv-roles", "Dream jobs", "Add a job title and paste or write what the job looks like. Add as many as you like, big and small.", addBtn("Add dream job"))
+      + block("cv-path", "Your trajectory", "Built from your dream jobs: from where you are now up to the biggest goal.", "");
+    const drawPath = (roles) => {
+      const body = $("#cv-path .block-body", page);
+      if (!roles.length) {
+        body.innerHTML = `<div class="card empty"><p>Add a dream job above and your path appears here.</p></div>`;
+        return;
+      }
+      const stages = LEVELS.map((label, i) => ({ label, roles: roles.filter((r) => levelOf(r) === i) })).filter((s) => s.roles.length);
+      const top = stages.length - 1;
+      body.innerHTML = `<div class="card traj">
+        <div class="traj-stage start"><span class="rm-dot done" aria-hidden="true">${I.check(13)}</span>
+          <div class="rm-body"><div class="rm-top"><b>Today</b></div><span class="rm-date">Where you are now</span></div></div>
+        ${stages.map((s, i) => `
+          <div class="traj-stage${i === top ? " goal" : ""}">
+            <span class="rm-dot ${i === top ? "goal" : "next"}" aria-hidden="true">${i === top ? I.target(13) : ""}</span>
+            <div class="rm-body">
+              <div class="rm-top"><b>${esc(s.label)}</b>${i === top ? `<span class="badge solid sm">Dream</span>` : ""}</div>
+              <div class="traj-roles">${s.roles.map((r) => `
+                <div class="traj-role"><span class="traj-title">${esc(r.title)}</span>
+                  ${r.description ? `<details class="rm-details"><summary>What it looks like</summary><p>${esc(r.description)}</p></details>` : ""}</div>`).join("")}</div>
+            </div>
+          </div>`).join("")}
+      </div>`;
+    };
+    mountItems($("#cv-roles", page), "dream_role", {
+      empty: "No dream jobs yet. Add the first title you're aiming for.",
+      sort: (a, b) => levelOf(b) - levelOf(a) || (a.title || "").localeCompare(b.title || ""),
+      onDraw: drawPath,
       fields: [
-        { name: "title", label: "Milestone", required: true, placeholder: "e.g. Land a PM internship" },
-        { name: "target", label: "Target date", type: "date" },
-        { name: "status", label: "Status", type: "select", options: ["Planned", "In progress", "Done"] },
-        { name: "details", label: "Details", type: "textarea" },
+        { name: "title", label: "Job title", required: true, placeholder: "e.g. Director of Product" },
+        { name: "description", label: "Job description", type: "textarea", placeholder: "Paste a posting or describe it: responsibilities, team, company, what a good day looks like..." },
+        { name: "level", label: "Level (the app guesses from the title; change it if it's wrong)", type: "select", options: ["Auto", ...LEVELS] },
       ],
-      render: (d) => {
-        const st = d.status || "Planned";
-        const cls = st === "Done" ? "done" : st === "In progress" ? "now" : "next";
-        return `<span class="rm-dot ${cls}" aria-hidden="true">${st === "Done" ? I.check(13) : ""}</span>
-          <div class="rm-body">
-            <div class="rm-top"><b>${esc(d.title)}</b><span class="badge sm ${st === "Done" ? "yes" : st === "In progress" ? "solid" : ""}">${esc(st)}</span></div>
-            <span class="rm-date">${d.target ? esc(fmtDate(d.target)) : "No date yet"}</span>
-            ${d.details ? `<details class="rm-details"><summary>Details</summary><p>${esc(d.details)}</p></details>` : ""}
-          </div>`;
-      },
+      render: (d) => `<b>${esc(d.title)}</b>
+        <span class="item-sub"><span class="badge sm">${esc(LEVELS[levelOf(d)])}</span>${d.level && d.level !== "Auto" ? "" : ` <span class="muted small" title="Placed from the words in the title. Change it with the Level menu when you edit.">auto</span>`}</span>
+        ${d.description ? `<span class="item-text">${esc(d.description)}</span>` : ""}`,
     });
   }
 
