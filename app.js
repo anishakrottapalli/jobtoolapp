@@ -3,6 +3,9 @@
 
 (function () {
   const METHODS = ["Email", "LinkedIn", "Phone call", "Text", "In person", "Other"];
+  // Emails are logged by the Gmail sync, so the manual "How" menus leave Email out.
+  const MANUAL_METHODS = ["In person", "LinkedIn", "Phone call", "Text", "Other"];
+  const EMAIL_HINT = `<span class="muted small">Emails are logged automatically by Gmail sync.</span>`;
   const EMAIL_STATUSES = [["unchecked", "Not checked"], ["verified", "Verified"], ["bounced", "Bounced"]];
   const LI_STATUSES = [["none", "Not connected"], ["following", "Following"], ["requested", "Request sent"], ["connected", "Connected"]];
   // History entry (kind "linkedin") logged when the status changes; stored in the method column.
@@ -1393,7 +1396,7 @@
             <div class="field wide"><label>Log to ${esc(fullName(c))}'s history</label>
               <select name="kind">${options([["outreach", "I reached out"], ["reply", "They replied"]])}</select></div>
             <div class="field"><label>Date</label><input name="happened_on" type="date" required value="${todayISO()}" max="${todayISO()}"></div>
-            <div class="field"><label>How</label><select name="method">${options(METHODS)}</select></div>
+            <div class="field"><label>How</label><select name="method">${options(MANUAL_METHODS)}</select>${EMAIL_HINT}</div>
             <div class="field wide"><label>Note (optional)</label><input name="note" value="${esc(`Re: ${a.position_title}${a.company ? " at " + a.company : ""}`)}"></div>
             <div class="btns"><button type="button" class="btn ghost" data-out-cancel>Cancel</button><button class="btn primary" type="submit">Add to history</button></div>
           </form>`;
@@ -2559,7 +2562,7 @@
           <form class="log-form" id="log-form">
             <div class="field"><label for="h-kind">What happened</label><select id="h-kind" name="kind" autofocus>${options([["outreach", "I reached out"], ["reply", "They replied"]])}</select></div>
             <div class="field"><label for="h-date">Date</label><input id="h-date" name="happened_on" type="date" required value="${todayISO()}" max="${todayISO()}"></div>
-            <div class="field wide"><label for="h-method">How</label><select id="h-method" name="method">${options(METHODS)}</select></div>
+            <div class="field wide"><label for="h-method">How</label><select id="h-method" name="method">${options(MANUAL_METHODS)}</select>${EMAIL_HINT}</div>
             <div class="field wide"><label for="h-note">Note (optional)</label><input id="h-note" name="note" placeholder="e.g. Asked about the PM role"></div>
             <div class="btns"><button type="button" class="btn ghost" id="log-cancel">Cancel</button><button class="btn primary" type="submit">Add to history</button></div>
           </form>` : ""}
