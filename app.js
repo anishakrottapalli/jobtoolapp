@@ -104,6 +104,92 @@
   const daysSince = (iso) => Math.max(0, Math.round((parseISO(todayISO()) - parseISO(iso)) / 86400000));
 
   const fullName = (c) => [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(" ");
+  const contactByName = (name) => {
+    const n = (name || "").trim().toLowerCase();
+    return n ? state.contacts.find((c) => fullName(c).toLowerCase() === n) || null : null;
+  };
+  // "Dana Lee (Hiring Manager)" -> "Dana Lee"
+  const personName = (text) => (text || "").split(/[(,]/)[0].trim();
+
+  // Turns a text box into a name box: suggests people from Contacts as you type and remembers which one you picked
+  // (input.dataset.contactId). With addOption, a name that isn't in Contacts offers "+ Add to my Contacts"
+  // (input.dataset.addContact, handled by whoever saves the form).
+  function attachNamePicker(input, { onChange, addOption = true } = {}) {
+    const wrap = document.createElement("div");
+    wrap.className = "np";
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    const note = document.createElement("span");
+    note.className = "np-note muted small";
+    note.hidden = true;
+    note.textContent = "Will be added to Contacts when you save.";
+    const list = document.createElement("div");
+    list.className = "np-list";
+    list.hidden = true;
+    wrap.append(list, note);
+    input.autocomplete = "off";
+    const render = () => {
+      const q = input.value.trim().toLowerCase();
+      if (!q || input.dataset.contactId) { list.hidden = true; return; }
+      const words = q.split(/\s+/);
+      const hits = state.contacts.filter((c) => { const n = fullName(c).toLowerCase(); return words.every((w) => n.includes(w)); }).slice(0, 6);
+      const exact = state.contacts.some((c) => fullName(c).toLowerCase() === q);
+      list.innerHTML = hits.map((c) => `<button type="button" class="np-item" data-np="${esc(c.id)}"><b>${esc(fullName(c))}</b><span>${esc([c.job_title, c.company].filter(Boolean).join(" · "))}</span></button>`).join("")
+        + (addOption && !exact ? `<button type="button" class="np-item np-add" data-np-add>+ Add “${esc(input.value.trim())}” to my Contacts</button>` : "");
+      list.hidden = !list.innerHTML;
+    };
+    input.addEventListener("input", () => {
+      delete input.dataset.contactId;
+      delete input.dataset.addContact;
+      note.hidden = true;
+      if (onChange) onChange(null);
+      render();
+    });
+    input.addEventListener("focus", render);
+    input.addEventListener("blur", () => setTimeout(() => { list.hidden = true; }, 150));
+    input.addEventListener("keydown", (e) => { if (e.key === "Escape") list.hidden = true; });
+    list.addEventListener("mousedown", (e) => e.preventDefault()); // keep focus so the click lands
+    list.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if ("npAdd" in b.dataset) {
+        input.dataset.addContact = "1";
+        note.hidden = false;
+      } else {
+        const c = state.contacts.find((x) => x.id === b.dataset.np);
+        input.value = fullName(c);
+        input.dataset.contactId = c.id;
+        if (onChange) onChange(c);
+      }
+      list.hidden = true;
+    });
+  }
+
+  // One interview row (date, who with, remove) used by the application page and the edit form.
+  function makeIvRow(iv = {}) {
+    const row = document.createElement("div");
+    row.className = "iv-row";
+    row.innerHTML = `<input type="date" class="iv-date" aria-label="Interview date" value="${esc(iv.date || "")}">
+      <input type="text" class="iv-with" aria-label="Who the interview was with" placeholder="With (type a name)" value="${esc(iv.with || "")}">
+      <button type="button" class="icon-btn" data-iv-del aria-label="Remove interview" title="Remove">${I.trash(14)}</button>`;
+    const who = $(".iv-with", row);
+    if (iv.contact_id && state.contacts.some((x) => x.id === iv.contact_id)) who.dataset.contactId = iv.contact_id;
+    attachNamePicker(who);
+    $("[data-iv-del]", row).addEventListener("click", () => row.remove());
+    return row;
+  }
+  function readIvRow(row) {
+    const inp = $(".iv-with", row), who = inp.value.trim();
+    const c = (inp.dataset.contactId && state.contacts.find((x) => x.id === inp.dataset.contactId)) || contactByName(personName(who));
+    return { date: $(".iv-date", row).value, with: who, contact_id: c ? c.id : null, add: !!inp.dataset.addContact && !c };
+  }
+  const cleanIvs = (rows) => rows.filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
+  const ivDraft = (a, idx, who) => {
+    const [first, ...rest] = personName(who).split(/\s+/);
+    state.contactDraft = { appId: a.id, ivIndex: idx, prefill: { first_name: first, last_name: rest.join(" "), company: a.company || "" } };
+    location.hash = "#/new";
+  };
+
   const initials = (c) => ((c.first_name || "")[0] || "").toUpperCase() + ((c.last_name || "")[0] || "").toUpperCase();
 
   function safeUrl(url) {
@@ -1051,7 +1137,9 @@
   // Interview rounds as {date, with}, oldest first. Older records only have dates.
   function interviewsOf(a) {
     const list = Array.isArray(a.interviews) && a.interviews.length ? a.interviews : (a.interview_dates || []).map((d) => ({ date: d, with: "" }));
-    return list.map((x) => ({ date: x.date, with: x.with || "" })).filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
+    return list.map((x) => ({ date: x.date, with: x.with || "",
+      contact_id: x.contact_id && state.contacts.some((c) => c.id === x.contact_id) ? x.contact_id : (contactByName(personName(x.with)) || {}).id || null }))
+      .filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
   }
 
   function renderAppView(el, a) {
@@ -1059,15 +1147,33 @@
     const flash = takeFlash();
     const sub = [a.company, a.location].filter(Boolean).join(" · ");
     const job = safeUrl(a.job_url);
-    const interviews = interviewsOf(a);
-    const baseEvents = [];
-    if (a.status === "completed" && a.date_applied) baseEvents.push({ date: a.date_applied, text: "Applied", kind: "outreach" });
-    interviews.forEach((iv, i) => baseEvents.push({ date: iv.date, text: `Interview #${i + 1}`, sub: iv.with ? "with " + iv.with : "", kind: "reply" }));
-    if (a.rejection_date) baseEvents.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin" });
+    let interviews = interviewsOf(a);
+    const baseEvents = () => {
+      const ev = [];
+      if (a.status === "completed" && a.date_applied) ev.push({ date: a.date_applied, text: "Applied", kind: "outreach" });
+      interviews.forEach((iv, i) => ev.push({ date: iv.date, text: `Interview #${i + 1}`, sub: iv.with ? "with " + iv.with : "", kind: "reply" }));
+      if (a.rejection_date) ev.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin" });
+      return ev;
+    };
     let mailEvents = [];
+    let ivEdit = false; // editing the Interviews box in place
+    const ivWho = (iv, n) => {
+      if (!iv.with) return `<span class="muted">Who it was with: not recorded</span>`;
+      return iv.contact_id
+        ? `<span class="muted">with <a href="#/contact/${esc(iv.contact_id)}">${esc(iv.with)}</a></span>`
+        : `<span class="muted">with ${esc(iv.with)} · <button type="button" class="linkbtn" data-iv-contact="${n}">Save to Contacts</button></span>`;
+    };
+    const interviewsHtml = () => ivEdit
+      ? `<div id="iv-rows"></div>
+         <div class="doc-actions"><button type="button" class="btn" data-iv-add>${I.plus(15)} Add interview</button></div>
+         <div class="doc-actions"><button type="button" class="btn ghost" data-iv-cancel>Cancel</button><button type="button" class="btn primary" data-iv-save>Save</button></div>`
+      : (interviews.length ? `<div class="iv-list">${interviews.map((iv, n) => `
+          <div class="iv-item"><b>Interview #${n + 1}</b><span>${esc(fmtDate(iv.date))}</span>${ivWho(iv, n)}</div>`).join("")}</div>`
+        : `<span class="muted">No interviews yet.</span>`)
+        + `<div class="doc-actions"><button type="button" class="btn" data-iv-edit>${interviews.length ? I.pencil(14) + " Edit interviews" : I.plus(15) + " Add interview"}</button></div>`;
     let tlOpen = false; // the timeline gets long, so it stays collapsed until asked for
     const timelineHtml = () => {
-      const events = [...baseEvents, ...mailEvents].sort((x, y) => y.date.localeCompare(x.date));
+      const events = [...baseEvents(), ...mailEvents].sort((x, y) => y.date.localeCompare(x.date));
       if (!events.length) return `<span class="muted">Nothing yet.</span>`;
       const toggle = `<button type="button" class="btn${tlOpen ? " ghost" : ""}" data-tl-toggle aria-expanded="${tlOpen}">${tlOpen ? "Hide timeline" : `View timeline (${events.length})`}</button>`;
       if (!tlOpen) return `<span class="muted small">Latest: ${esc(events[0].text)}, ${esc(fmtDate(events[0].date))}</span><div class="doc-actions">${toggle}</div>`;
@@ -1136,14 +1242,44 @@
               <span class="muted small">Entering a date applied in the edit form marks it Applied.</span>`)}
             ${sec("Resume", 4, resumeBody)}
             ${sec("Interview prep", 7, `<div id="prep-box"><span class="muted">Loading…</span></div><input type="file" id="prep-file" hidden>`)}
-            ${sec("Interviews", 9, interviews.length ? `<div class="iv-list">${interviews.map((iv, n) => `
-                <div class="iv-item"><b>Interview #${n + 1}</b><span>${esc(fmtDate(iv.date))}</span><span class="muted">${iv.with ? "with " + esc(iv.with) : "Who it was with: not recorded"}</span></div>`).join("")}</div>`
-              : `<span class="muted">No interviews yet. Add them with the edit button.</span>`,
-              { right: interviews.length ? `<span class="sec-count">${interviews.length}</span>` : "" })}
+            ${sec("Interviews", 9, `<div id="iv-box">${interviewsHtml()}</div>`)}
             ${sec("Timeline", 10, `<div id="tl-box">${timelineHtml()}</div>`)}
           </div>
         </div>
       </div>`;
+    const ivBox = $("#iv-box", el);
+    const paintIv = () => {
+      ivBox.innerHTML = interviewsHtml();
+      if (ivEdit) {
+        const rows = $("#iv-rows", ivBox);
+        (interviews.length ? interviews : [{}]).forEach((iv) => rows.appendChild(makeIvRow(iv)));
+      }
+    };
+    ivBox.addEventListener("click", async (e) => {
+      const t = e.target.closest("button");
+      if (!t || t.closest(".np") || t.closest(".iv-row")) return; // name suggestions and row removal handle themselves
+      const d = t.dataset;
+      if ("ivContact" in d) return ivDraft(a, Number(d.ivContact), interviews[Number(d.ivContact)].with);
+      if ("ivEdit" in d) ivEdit = true;
+      else if ("ivCancel" in d) ivEdit = false;
+      else if ("ivAdd" in d) {
+        const row = makeIvRow();
+        $("#iv-rows", ivBox).appendChild(row);
+        $(".iv-date", row).focus();
+        return;
+      } else if ("ivSave" in d) {
+        const list = cleanIvs($$(".iv-row", ivBox).map(readIvRow));
+        const addIdx = list.findIndex((x) => x.add && x.with); // a new name to add to Contacts after saving
+        const rows = list.map(({ date, with: who, contact_id }) => ({ date, with: who, contact_id }));
+        const saved = await run(() => backend.saveApplication({ ...a, interviews: rows, interview_dates: rows.map((x) => x.date) }), el);
+        Object.assign(a, saved);
+        interviews = interviewsOf(a);
+        ivEdit = false;
+        $("#tl-box", el).innerHTML = timelineHtml();
+        if (addIdx >= 0) return ivDraft(a, addIdx, rows[addIdx].with);
+      } else return;
+      paintIv();
+    });
     $("#tl-box", el).addEventListener("click", (e) => {
       if (!e.target.closest("[data-tl-toggle]")) return;
       tlOpen = !tlOpen;
@@ -1226,7 +1362,8 @@
       const groups = groupsOf(a.id);
       const entryForm = (o, groupId, prefill, contactId) => `
         <form class="log-form out-form" data-out-form="entry">
-          <div class="field wide"><label>Name</label><input name="name" required value="${esc(o ? o.name : prefill ? prefill.name : "")}"></div>
+          <input type="hidden" name="contact_id" value="${esc(o ? o.contact_id || "" : contactId || "")}">
+          <div class="field wide"><label>Name <span class="muted small">(start typing to find someone in your Contacts)</span></label><input name="name" required value="${esc(o ? o.name : prefill ? prefill.name : "")}"></div>
           <div class="field wide"><label>Title / Company (optional)</label><input name="title_company" value="${esc(o ? o.title_company : prefill ? prefill.title_company : "")}"></div>
           <div class="field wide"><label>Update</label><textarea name="update_text" class="autogrow" rows="2" placeholder="e.g. email sent 5/5; LinkedIn connected; replied">${esc(o ? o.update_text : "")}</textarea></div>
           <div class="field wide"><label>Group</label><select name="group_id">${options(groups.map((g) => [g.id, g.name]), groupId)}</select></div>
@@ -1268,7 +1405,7 @@
             ${iconBtn(`data-out-gdelete="${esc(g.id)}"`, "Delete group", I.trash(14))}</span></div>`}
           ${list.length || adding ? `<ul class="out-list">${list.map((o, i) => ed && ed.type === "entry" && ed.id === o.id ? `<li class="editing">${entryForm(o, g.id)}</li>` : `
             <li><div class="out-main" role="button" tabindex="0" data-out-edit="${esc(o.id)}" title="Click to edit">
-                <span class="out-line"><b>${esc(o.name)}</b>${o.title_company ? ` (${esc(o.title_company)})` : ""}${o.update_text ? ` — ${esc(o.update_text)}` : ""}</span>
+                <span class="out-line"><b>${o.contact_id && state.contacts.some((c) => c.id === o.contact_id) ? `<a href="#/contact/${esc(o.contact_id)}">${esc(o.name)}</a>` : esc(o.name)}</b>${o.title_company ? ` (${esc(o.title_company)})` : ""}${o.update_text ? ` — ${esc(o.update_text)}` : ""}</span>
                 <span class="out-date">Updated ${esc(fmtDate((o.updated_at || o.created_at || "").slice(0, 10)))}</span></div>
               <div class="out-move">
                 ${iconBtn(`data-out-move="${esc(o.id)}:-1"${i === 0 ? " disabled" : ""}`, "Move up", I.chevron(14), "out-up")}
@@ -1283,6 +1420,16 @@
           : `<div class="doc-actions"><button type="button" class="btn ghost" data-out-gadd>+ Add group</button></div>`)
         + (a.company && peopleAt(a).length ? `<div class="doc-actions out-people-row"><button class="btn" type="button" id="out-people">People you know at ${esc(a.company)}</button></div>` : "");
       $$("textarea.autogrow", outBox).forEach(autogrowTa);
+      // Name suggestions from Contacts: picking one links the entry and fills in their title / company.
+      $$('[data-out-form="entry"] input[name="name"]', outBox).forEach((inp) => {
+        const f = inp.form;
+        if (f.contact_id.value) inp.dataset.contactId = f.contact_id.value;
+        attachNamePicker(inp, { addOption: false, onChange: (c) => {
+          f.contact_id.value = c ? c.id : "";
+          if (c && !f.title_company.value.trim()) f.title_company.value = [c.job_title, c.company].filter(Boolean).join(", ");
+          if (f.to_contacts) { f.to_contacts.disabled = !!c; if (c) f.to_contacts.checked = false; }
+        } });
+      });
       const first = $("[data-out-form] input", outBox);
       if (first && ed) first.focus();
     };
@@ -1355,8 +1502,9 @@
     }
     const nextOrder = (list) => list.reduce((m, x) => Math.max(m, x.sort_order + 1), 0);
     outBox.addEventListener("click", async (e) => {
+      if (e.target.closest("a")) return; // a contact link, not "click to edit"
       const t = e.target.closest("button, [data-out-edit]");
-      if (!t || !outBox.contains(t)) return;
+      if (!t || !outBox.contains(t) || t.closest(".np")) return;
       const d = t.dataset;
       if (t.id === "out-people") openPeople();
       else if (d.outAdd) editOutreach({ type: "entry", id: null, group: d.outAdd });
@@ -1421,7 +1569,8 @@
         update_text: f.update_text.value.trim() };
       if (!row.name) return;
       if (existing) row.id = existing.id;
-      if (!existing && ed.contactId) row.contact_id = ed.contactId;
+      const linked = f.contact_id.value || (contactByName(row.name) || {}).id || null; // picked from the suggestions, or typed exactly
+      if (existing) row.contact_id = linked; else if (linked) row.contact_id = linked;
       if (!existing || existing.group_id !== groupId) row.sort_order = nextOrder(outreachOf(a.id, groupId));
       const saved = await run(() => backend.saveOutreach(row), f);
       if (existing) Object.assign(existing, saved); else state.outreach.push(saved);
@@ -1556,17 +1705,12 @@
     });
 
     // Interviews: a date per round, added or removed here.
-    const addIv = (d = "", who = "") => {
-      const row = document.createElement("div");
-      row.className = "iv-row";
-      row.innerHTML = `<input type="date" class="iv-date" aria-label="Interview date" value="${esc(d)}">
-        <input type="text" class="iv-with" aria-label="Who the interview was with" placeholder="With (name, title)" value="${esc(who)}">
-        <button type="button" class="icon-btn" aria-label="Remove interview" title="Remove">${I.trash(14)}</button>`;
+    const addIv = (d = "", who = "", cid = null) => {
+      const row = makeIvRow({ date: d, with: who, contact_id: cid });
       $("#iv-list", el).appendChild(row);
-      $("button", row).addEventListener("click", () => row.remove());
-      if (!d) $("input", row).focus();
+      if (!d) $(".iv-date", row).focus();
     };
-    interviewsOf(a).forEach((iv) => addIv(iv.date, iv.with));
+    interviewsOf(a).forEach((iv) => addIv(iv.date, iv.with, iv.contact_id));
     $("#add-iv", el).addEventListener("click", () => addIv());
     // Emails the Gmail sync matched to this application: pick one to add its date as an interview
     // (the interview itself is usually later, so the date can be changed afterwards).
@@ -1618,8 +1762,9 @@
       }
       const fd = new FormData(form);
       const data = { id: existing ? existing.id : undefined };
-      data.interviews = $$(".iv-row", el).map((r) => ({ date: $(".iv-date", r).value, with: $(".iv-with", r).value.trim() }))
-        .filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
+      const ivRows = cleanIvs($$(".iv-row", el).map(readIvRow));
+      const ivAdd = ivRows.findIndex((x) => x.add && x.with); // a new name to add to Contacts after saving
+      data.interviews = ivRows.map(({ date, with: who, contact_id }) => ({ date, with: who, contact_id }));
       data.interview_dates = data.interviews.map((x) => x.date);
       for (const [k, v] of fd.entries()) data[k] = typeof v === "string" ? v.trim() : v;
       data.resume_tailored = data.resume_kind === "tailored";
@@ -1649,6 +1794,7 @@
       if (existing) Object.assign(existing, saved);
       else state.applications.push(saved);
       state.flash = existing ? "Saved." : "Application saved.";
+      if (ivAdd >= 0) return ivDraft(saved, ivAdd, data.interviews[ivAdd].with);
       location.hash = "#/application/" + saved.id;
     });
     if (existing) {
@@ -2582,6 +2728,19 @@
         state.flash = "Saved.";
       } else {
         state.contacts.push(saved);
+        if (draft && draft.ivIndex != null) {
+          // Came from an interview's "with" name: link that interview, then go back to the application.
+          const app = state.applications.find((x) => x.id === draft.appId);
+          if (app) {
+            const rows = interviewsOf(app);
+            if (rows[draft.ivIndex]) rows[draft.ivIndex].contact_id = saved.id;
+            Object.assign(app, await run(() => backend.saveApplication({ ...app, interviews: rows, interview_dates: rows.map((x) => x.date) }), el));
+          }
+          state.contactDraft = null;
+          state.flash = `${fullName(saved)} saved to Contacts and linked.`;
+          location.hash = "#/application/" + draft.appId;
+          return;
+        }
         if (draft) {
           // Came from an application's outreach log: link the entry, then go back to the application.
           const entry = state.outreach.find((o) => o.id === draft.entryId);
