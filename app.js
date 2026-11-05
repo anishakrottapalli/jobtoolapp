@@ -1416,7 +1416,7 @@
             ${iconBtn(`data-out-gdelete="${esc(g.id)}"`, "Delete group", I.trash(14))}</span></div>`}
           ${list.length || adding ? `<ul class="out-list">${list.map((o, i) => ed && ed.type === "entry" && ed.id === o.id ? `<li class="editing">${entryForm(o, g.id)}</li>` : `
             <li><div class="out-main" role="button" tabindex="0" data-out-edit="${esc(o.id)}" title="Click to edit">
-                <span class="out-line"><b>${o.contact_id && state.contacts.some((c) => c.id === o.contact_id) ? `<a href="#/contact/${esc(o.contact_id)}">${esc(o.name)}</a>` : esc(o.name)}</b>${o.title_company ? ` (${esc(o.title_company)})` : ""}${o.update_text ? ` — ${esc(o.update_text)}` : ""}</span>
+                <span class="out-line"><b>${esc(o.name)}</b>${o.contact_id && state.contacts.some((c) => c.id === o.contact_id) ? ` <a class="out-open" href="#/contact/${esc(o.contact_id)}" title="Open ${esc(o.name)} in Contacts" aria-label="Open ${esc(o.name)} in Contacts">↗</a>` : ""}${o.title_company ? ` (${esc(o.title_company)})` : ""}${o.update_text ? ` — ${esc(o.update_text)}` : ""}</span>
                 <span class="out-date">Updated ${esc(fmtDate((o.updated_at || o.created_at || "").slice(0, 10)))}</span></div>
               <div class="out-move">
                 ${iconBtn(`data-out-move="${esc(o.id)}:-1"${i === 0 ? " disabled" : ""}`, "Move up", I.chevron(14), "out-up")}
