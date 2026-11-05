@@ -1720,10 +1720,6 @@
           ${text("job_url", "Job posting link", "url", ' placeholder="https://…"')}
           <p class="error" id="title-err" hidden>Position title is required.</p>
         </section>
-        <section class="section"><h3>Job description</h3>
-          <div class="field"><label for="a-job_description" class="sr-only">Job description</label>
-            <textarea id="a-job_description" name="job_description" class="autogrow" rows="6" placeholder="Paste the job description. Postings can disappear.">${esc(a.job_description)}</textarea></div>
-        </section>
         <section class="section"><h3>Status</h3>
           <div class="cols-2">
             <div class="field"><label for="a-status">Status</label>
@@ -1737,6 +1733,10 @@
             <div id="iv-list"></div>
             <div><button type="button" class="btn" id="add-iv">${I.plus(15)} Add interview</button></div>
             <div id="iv-mails"></div></div>
+        </section>
+        <section class="section"><h3>Job description</h3>
+          <div class="field"><label for="a-job_description" class="sr-only">Job description</label>
+            <textarea id="a-job_description" name="job_description" class="autogrow" rows="6" placeholder="Paste the job description. Postings can disappear.">${esc(a.job_description)}</textarea></div>
         </section>
         <section class="section"><h3>Notes</h3>
           <div class="field"><label for="a-notes" class="sr-only">Notes</label><textarea id="a-notes" name="notes">${esc(a.notes)}</textarea></div>
