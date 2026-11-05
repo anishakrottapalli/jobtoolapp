@@ -1239,7 +1239,7 @@
               : `<span class="muted">None added</span>`,
               { right: qs.length ? `<span class="sec-count">${qs.length}</span>` : "" })}
             ${sec("Outreach", 8, `<div id="out-box"></div>`)}
-            ${sec("Emails", 9, `<div id="mail-box"><span class="muted">Loading…</span></div>`, { right: `<span class="sec-count" id="mail-count"></span>` })}
+            ${sec("Correspondence", 9, `<div id="mail-box"><span class="muted">Loading…</span></div>`, { right: `<span class="sec-count" id="mail-count"></span>` })}
           </div>
           <div class="app-aside">
             ${sec("Overview", 1, `<div class="facts">
@@ -1596,21 +1596,102 @@
       backend.saveOutreach({ id: o.id, contact_id: c.id }).catch(() => {});
     });
     renderOutreach();
-    // Emails from the Jobs folder, matched to this application by the Gmail sync.
-    (async () => {
-      let mails = [];
-      try { mails = await backend.listApplicationEmails(a.id); } catch (e) { /* table not created yet */ }
-      const box = $("#mail-box", el);
-      if (!box) return;
-      mailEvents = mails.filter((m) => m.happened_on).map((m) => ({ date: m.happened_on, kind: m.direction === "out" ? "outreach" : "reply",
-        text: m.direction === "out" ? "Email sent" : "Reply received", sub: m.counterpart ? (m.direction === "out" ? "to " : "from ") + m.counterpart : "" }));
+    // Correspondence: emails matched by the Gmail sync, plus anything you add by hand
+    // (LinkedIn messages, calls, emails from people at other companies).
+    let synced = [], manual = [], corrEdit = null; // corrEdit: null, or { id } while the form is open (id null = new)
+    const mailBox = $("#mail-box", el);
+    const corrAll = () => [
+      ...synced.map((m) => ({ ...m, method: "Email", auto: true })),
+      ...manual.map((m) => ({ ...m, auto: false })),
+    ].filter((m) => m.happened_on).sort((x, y) => y.happened_on.localeCompare(x.happened_on));
+    const corrForm = (c) => `
+      <form class="log-form" data-corr-form>
+        <input type="hidden" name="contact_id" value="${esc(c ? c.contact_id || "" : "")}">
+        <div class="field"><label>What happened</label><select name="direction">${options([["out", "I reached out"], ["in", "They reached out"]], c ? c.direction : "in")}</select></div>
+        <div class="field"><label>Date</label><input name="happened_on" type="date" required value="${esc(c ? c.happened_on : todayISO())}" max="${todayISO()}"></div>
+        <div class="field wide"><label>How</label><select name="method">${options(METHODS, c ? c.method : "Email")}</select></div>
+        <div class="field wide"><label>Name <span class="muted small">(start typing to find someone in your Contacts)</span></label><input name="counterpart" value="${esc(c ? c.counterpart : "")}"></div>
+        <div class="field wide"><label>Note (optional)</label><input name="note" value="${esc(c ? c.note : "")}" placeholder="e.g. Asked if I'm still interested"></div>
+        <div class="btns">${c ? `<button type="button" class="btn ghost danger-text" data-corr-del="${esc(c.id)}">Delete</button><span class="grow"></span>` : ""}
+          <button type="button" class="btn ghost" data-corr-cancel>Cancel</button><button class="btn primary" type="submit">Save</button></div>
+      </form>`;
+    const paintCorr = () => {
+      const all = corrAll();
+      mailEvents = all.map((m) => {
+        const out = m.direction === "out";
+        return { date: m.happened_on, kind: out ? "outreach" : "reply",
+          text: m.auto ? (out ? "Email sent" : "Reply received") : `${out ? "You reached out" : "They reached out"} · ${m.method}`,
+          sub: m.counterpart ? (out ? "to " : "from ") + m.counterpart : "" };
+      });
       const tl = $("#tl-box", el);
       if (tl) tl.innerHTML = timelineHtml();
-      $("#mail-count", el).textContent = mails.length || "";
-      box.innerHTML = mails.length ? `<div class="mail-list">${mails.map((m) => `
-        <div class="mail-row"><span class="badge ${m.direction === "out" ? "" : "yes"}">${m.direction === "out" ? "Sent" : "Received"}</span>
-          <span class="mail-who">${esc(m.counterpart || "")}</span><span class="muted small">${esc(fmtDate(m.happened_on))}</span></div>`).join("")}</div>`
-        : `<span class="muted">No emails yet. Emails in your Jobs folder from ${a.company ? esc(a.company) : "this company"} show up here.</span>`;
+      $("#mail-count", el).textContent = all.length || "";
+      const editing = corrEdit && corrEdit.id ? manual.find((x) => x.id === corrEdit.id) : null;
+      const rows = all.map((m) => {
+        if (editing && m.id === editing.id) return `<div class="mail-row corr-row">${corrForm(editing)}</div>`;
+        const out = m.direction === "out";
+        const linked = m.contact_id && state.contacts.find((c) => c.id === m.contact_id);
+        const who = !m.counterpart ? "" : linked ? `<a href="#/contact/${esc(linked.id)}">${esc(m.counterpart)}</a>` : esc(m.counterpart);
+        return `<div class="mail-row corr-row"><span class="badge ${out ? "" : "yes"}">${out ? "Sent" : "Received"} · ${esc(m.method)}</span>
+          <span class="mail-who">${who}${!m.auto && m.counterpart && !linked ? ` <button type="button" class="linkbtn" data-corr-contact="${esc(m.id)}">Save to Contacts</button>` : ""}</span>
+          <span class="muted small">${esc(fmtDate(m.happened_on))}</span>
+          ${m.auto ? "" : `<button type="button" class="icon-btn" data-corr-edit="${esc(m.id)}" aria-label="Edit" title="Edit">${I.pencil(14)}</button>`}
+          ${m.note ? `<span class="muted small corr-note">${esc(m.note)}</span>` : ""}</div>`;
+      }).join("");
+      const adding = corrEdit && !corrEdit.id;
+      mailBox.innerHTML = (all.length ? `<div class="mail-list">${rows}</div>`
+          : `<span class="muted">Nothing yet. Emails in your Jobs folder from ${a.company ? esc(a.company) : "this company"} show up here automatically.</span>`)
+        + (adding ? `<div class="mail-list">${corrForm(null)}</div>`
+          : `<div class="doc-actions"><button type="button" class="btn" data-corr-add>${I.plus(15)} Add correspondence</button></div>`);
+      $$('[data-corr-form] input[name="counterpart"]', mailBox).forEach((inp) => {
+        const f = inp.form;
+        if (f.contact_id.value) inp.dataset.contactId = f.contact_id.value;
+        attachNamePicker(inp, { onChange: (c) => { f.contact_id.value = c ? c.id : ""; } });
+      });
+    };
+    const corrDraft = (c) => {
+      const [first, ...rest] = personName(c.counterpart).split(/\s+/);
+      state.contactDraft = { appId: a.id, corrId: c.id, name: personName(c.counterpart), prefill: { first_name: first, last_name: rest.join(" ") }, rest: [] };
+      location.hash = "#/new";
+    };
+    mailBox.addEventListener("click", async (e) => {
+      const t = e.target.closest("button");
+      if (!t || t.closest(".np")) return;
+      const d = t.dataset;
+      if ("corrAdd" in d) corrEdit = { id: null };
+      else if (d.corrEdit) corrEdit = { id: d.corrEdit };
+      else if ("corrCancel" in d) corrEdit = null;
+      else if (d.corrContact) return corrDraft(manual.find((x) => x.id === d.corrContact));
+      else if (d.corrDel) {
+        if (!(await confirmBox("Delete this correspondence entry?"))) return;
+        await run(() => backend.deleteCorrespondence(d.corrDel), mailBox);
+        manual = manual.filter((x) => x.id !== d.corrDel);
+        corrEdit = null;
+      } else return;
+      paintCorr();
+      const first = $("[data-corr-form] input, [data-corr-form] select", mailBox);
+      if (corrEdit && first) first.focus();
+    });
+    mailBox.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = e.target;
+      const name = f.counterpart.value.trim();
+      const row = { application_id: a.id, direction: f.direction.value, method: f.method.value, counterpart: name,
+        happened_on: f.happened_on.value, note: f.note.value.trim(), contact_id: f.contact_id.value || (contactByName(name) || {}).id || null };
+      if (!row.happened_on) return;
+      const existing = corrEdit && corrEdit.id ? manual.find((x) => x.id === corrEdit.id) : null;
+      if (existing) row.id = existing.id;
+      const addToContacts = !row.contact_id && name && f.counterpart.dataset.addContact;
+      const saved = await run(() => backend.saveCorrespondence(row), f);
+      if (existing) Object.assign(existing, saved); else manual.push(saved);
+      corrEdit = null;
+      paintCorr();
+      if (addToContacts) corrDraft(saved);
+    });
+    (async () => {
+      try { synced = await backend.listApplicationEmails(a.id); } catch (err) { /* table not created yet */ }
+      try { manual = await backend.listCorrespondence(a.id); } catch (err) { /* table not created yet */ }
+      if (mailBox.isConnected) paintCorr();
     })();
     $$("[data-copy-doc]", el).forEach((b) => b.addEventListener("click", async () => {
       const key = b.dataset.copyDoc;
@@ -2747,6 +2828,14 @@
         state.flash = "Saved.";
       } else {
         state.contacts.push(saved);
+        if (draft && draft.corrId) {
+          // Came from a correspondence entry's name: link it, then go back to the application.
+          try { await run(() => backend.saveCorrespondence({ id: draft.corrId, contact_id: saved.id }), el); } catch (err) { /* shown */ }
+          state.contactDraft = null;
+          state.flash = `${fullName(saved)} saved to Contacts and linked.`;
+          location.hash = "#/application/" + draft.appId;
+          return;
+        }
         if (draft && draft.ivIndex != null) {
           // Came from an interview's "with" name: link that interview, then go back to the application.
           const app = state.applications.find((x) => x.id === draft.appId);

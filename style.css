@@ -630,3 +630,9 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .np-add { color: var(--accent); font-weight: 600; }
 .np-note { display: block; margin-top: 4px; }
 .iv-item a, .out-line a { color: inherit; text-decoration: underline; }
+
+/* correspondence */
+.corr-row { flex-wrap: wrap; }
+.corr-row .corr-note { flex-basis: 100%; }
+.corr-row .log-form { flex: 1 1 100%; }
+.mail-list + .doc-actions, .mail-list + .mail-list { margin-top: 12px; }
