@@ -9,7 +9,8 @@
   function code({ supabaseUrl, supabaseKey, token }) {
     return `// Job Central — Gmail sync
 // Checks two Gmail folders every hour: Networking (people become contacts, emails are logged
-// in their history) and Jobs (emails are shown under the matching application).
+// in their history) and Jobs (emails are shown under the matching application, and also logged in
+// the history of anyone who is already a contact).
 // Networking: only who an email was from/to and when. Jobs: if the sender doesn't identify the
 // company, the subject and start of the email are scanned for an application's company name.
 // That text stays in Google; only the match (who, when, which application) is sent to the app.
@@ -63,6 +64,11 @@ function sync() {
     (byEmail[r.email] = byEmail[r.email] || []).push(r.application_id);
   });
   const jobs = folderMessages_(JOBS_FOLDER, true);
+  // Jobs emails with people who are already contacts also go in those contacts' history (nobody new is added from Jobs).
+  const jobContactEvents = [];
+  jobs.forEach((m) => people_(m, me).filter((p) => contacts.has(p.email))
+    .forEach((p) => jobContactEvents.push({ id: m.id, email: p.email, dir: m.sent ? 'out' : 'in', date: day(m) })));
+  const jobHistory = jobContactEvents.length ? rpc_('gmail_sync_log', { p_token: SYNC_TOKEN, p_events: jobContactEvents }) : 0;
   const jobEvents = [];
   // Networking emails with someone linked to an application also show under that application.
   networking.forEach((m) => people_(m, me).forEach((p) => (byEmail[p.email] || []).forEach((appId) =>
@@ -93,7 +99,7 @@ function sync() {
 
   rpc_('gmail_sync_finish', { p_token: SYNC_TOKEN });
   console.log('Networking: ' + networking.length + ' emails, added ' + added + ' contacts, logged ' + logged + ' entries. ' +
-    'Jobs: ' + jobs.length + ' emails, ' + jobLogged + ' newly matched to applications.');
+    'Jobs: ' + jobs.length + ' emails, ' + jobLogged + ' newly matched to applications, ' + jobHistory + ' logged in contacts\\' history.');
 }
 
 // Every message (last 30 days) in a folder, including your own replies in those conversations.
