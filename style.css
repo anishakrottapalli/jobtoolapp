@@ -631,6 +631,9 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .np-note { display: block; margin-top: 4px; }
 .iv-item a, .out-line a { color: inherit; text-decoration: underline; }
 
+/* application form: status buttons */
+.status-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* correspondence */
 .corr-row { flex-wrap: wrap; }
 .corr-row .corr-note { flex-basis: 100%; }
