@@ -184,9 +184,17 @@
     return { date: $(".iv-date", row).value, with: who, contact_id: c ? c.id : null, add: !!inp.dataset.addContact && !c };
   }
   const cleanIvs = (rows) => rows.filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
-  const ivDraft = (a, idx, who) => {
+  // Start adding people from interviews to Contacts, one contact form after another. items: [{ idx, who }]
+  const ivQueueItem = ({ idx, who }) => {
     const [first, ...rest] = personName(who).split(/\s+/);
-    state.contactDraft = { appId: a.id, ivIndex: idx, prefill: { first_name: first, last_name: rest.join(" "), company: a.company || "" } };
+    return { ivIndex: idx, name: personName(who), prefill: { first_name: first, last_name: rest.join(" ") } };
+  };
+  const ivDraft = (a, items) => {
+    const seen = new Set();
+    const queue = items.filter((x) => { const k = personName(x.who).toLowerCase(); if (!k || seen.has(k)) return false; seen.add(k); return true; }).map(ivQueueItem);
+    if (!queue.length) return;
+    queue.forEach((q) => { q.prefill.company = a.company || ""; });
+    state.contactDraft = { appId: a.id, ...queue[0], rest: queue.slice(1) };
     location.hash = "#/new";
   };
 
@@ -1259,7 +1267,7 @@
       const t = e.target.closest("button");
       if (!t || t.closest(".np") || t.closest(".iv-row")) return; // name suggestions and row removal handle themselves
       const d = t.dataset;
-      if ("ivContact" in d) return ivDraft(a, Number(d.ivContact), interviews[Number(d.ivContact)].with);
+      if ("ivContact" in d) return ivDraft(a, [{ idx: Number(d.ivContact), who: interviews[Number(d.ivContact)].with }]);
       if ("ivEdit" in d) ivEdit = true;
       else if ("ivCancel" in d) ivEdit = false;
       else if ("ivAdd" in d) {
@@ -1269,14 +1277,14 @@
         return;
       } else if ("ivSave" in d) {
         const list = cleanIvs($$(".iv-row", ivBox).map(readIvRow));
-        const addIdx = list.findIndex((x) => x.add && x.with); // a new name to add to Contacts after saving
+        const toAdd = list.map((x, idx) => ({ idx, who: x.with, add: x.add })).filter((x) => x.add && x.who); // new names to add to Contacts after saving
         const rows = list.map(({ date, with: who, contact_id }) => ({ date, with: who, contact_id }));
         const saved = await run(() => backend.saveApplication({ ...a, interviews: rows, interview_dates: rows.map((x) => x.date) }), el);
         Object.assign(a, saved);
         interviews = interviewsOf(a);
         ivEdit = false;
         $("#tl-box", el).innerHTML = timelineHtml();
-        if (addIdx >= 0) return ivDraft(a, addIdx, rows[addIdx].with);
+        if (toAdd.length) return ivDraft(a, toAdd);
       } else return;
       paintIv();
     });
@@ -1763,7 +1771,7 @@
       const fd = new FormData(form);
       const data = { id: existing ? existing.id : undefined };
       const ivRows = cleanIvs($$(".iv-row", el).map(readIvRow));
-      const ivAdd = ivRows.findIndex((x) => x.add && x.with); // a new name to add to Contacts after saving
+      const ivAdd = ivRows.map((x, idx) => ({ idx, who: x.with, add: x.add })).filter((x) => x.add && x.who); // new names to add to Contacts after saving
       data.interviews = ivRows.map(({ date, with: who, contact_id }) => ({ date, with: who, contact_id }));
       data.interview_dates = data.interviews.map((x) => x.date);
       for (const [k, v] of fd.entries()) data[k] = typeof v === "string" ? v.trim() : v;
@@ -1794,7 +1802,7 @@
       if (existing) Object.assign(existing, saved);
       else state.applications.push(saved);
       state.flash = existing ? "Saved." : "Application saved.";
-      if (ivAdd >= 0) return ivDraft(saved, ivAdd, data.interviews[ivAdd].with);
+      if (ivAdd.length) return ivDraft(saved, ivAdd);
       location.hash = "#/application/" + saved.id;
     });
     if (existing) {
@@ -2639,6 +2647,7 @@
         ${existing ? `<a class="icon-btn" href="#/contact/${esc(c.id)}" aria-label="Cancel editing">${I.close()}</a>` : closeBtn}
       </div>
       <form class="panel-body" id="contact-form" autocomplete="off" novalidate>
+        ${draft ? `<div class="flash" role="status">Enter the details for ${esc(draft.name || [draft.prefill.first_name, draft.prefill.last_name].filter(Boolean).join(" "))}, then click Save.${draft.rest && draft.rest.length ? ` (${draft.rest.length} more ${draft.rest.length === 1 ? "person" : "people"} to add after this one.)` : ""}</div>` : ""}
         <section class="section"><h3>Name</h3>
           <div class="cols-3">
             ${text("first_name", "First *", "text", " required autofocus")}
@@ -2735,6 +2744,14 @@
             const rows = interviewsOf(app);
             if (rows[draft.ivIndex]) rows[draft.ivIndex].contact_id = saved.id;
             Object.assign(app, await run(() => backend.saveApplication({ ...app, interviews: rows, interview_dates: rows.map((x) => x.date) }), el));
+          }
+          // More new names from the same save: open the next contact form (skipping anyone already in Contacts).
+          let next = (draft.rest || []).slice();
+          while (next.length && contactByName(next[0].name)) next.shift();
+          if (next.length && app) {
+            state.contactDraft = { appId: draft.appId, ...next[0], rest: next.slice(1) };
+            renderOverlay();
+            return;
           }
           state.contactDraft = null;
           state.flash = `${fullName(saved)} saved to Contacts and linked.`;
