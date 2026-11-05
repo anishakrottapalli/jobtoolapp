@@ -15,6 +15,7 @@
     "interview_dates", "interviews", "resume_track", "notes", "resume_text", "cover_letter", "application_answers",
     "questions", "resume_tailored", "resume_file_path", "resume_file_name",
   ];
+  const CORRESPONDENCE_FIELDS = ["application_id", "direction", "method", "counterpart", "contact_id", "happened_on", "note"];
   const OUTREACH_FIELDS = ["application_id", "group_id", "contact_id", "name", "title_company", "update_text", "sort_order"];
   const safeFileName = (name) => name.replace(/[^\w.\-]+/g, "_").slice(-120);
 
@@ -124,6 +125,18 @@
       async listApplicationEmails(appId) {
         return check(await sb.from("application_emails").select("direction, counterpart, happened_on")
           .eq("application_id", appId).order("happened_on", { ascending: false }));
+      },
+      // Correspondence added by hand (see 017_application_correspondence.sql).
+      async listCorrespondence(appId) {
+        return check(await sb.from("application_correspondence").select("*").eq("application_id", appId).order("happened_on", { ascending: false }));
+      },
+      async saveCorrespondence(c) {
+        const row = pick(c, CORRESPONDENCE_FIELDS);
+        if (c.id) return check(await sb.from("application_correspondence").update(row).eq("id", c.id).select().single());
+        return check(await sb.from("application_correspondence").insert(row).select().single());
+      },
+      async deleteCorrespondence(id) {
+        check(await sb.from("application_correspondence").delete().eq("id", id));
       },
       // Files live in the private "documents" bucket, under the user's own folder:
       // <user>/<application>/ for the tailored resume, <user>/<application>/<folder>/ for others (e.g. "prep").
@@ -281,6 +294,7 @@
         state.applications = state.applications.filter((x) => x.id !== id);
         state.outreach = (state.outreach || []).filter((x) => x.application_id !== id);
         state.outreachGroups = (state.outreachGroups || []).filter((x) => x.application_id !== id);
+        state.correspondence = (state.correspondence || []).filter((x) => x.application_id !== id);
         persist();
       },
       async saveOutreach(o) {
@@ -329,6 +343,27 @@
         persist();
       },
       async listApplicationEmails() { return []; },
+      async listCorrespondence(appId) {
+        return (state.correspondence || []).filter((x) => x.application_id === appId).map((x) => ({ ...x }));
+      },
+      async saveCorrespondence(c) {
+        const row = pick(c, CORRESPONDENCE_FIELDS);
+        state.correspondence = state.correspondence || [];
+        if (c.id) {
+          const existing = state.correspondence.find((x) => x.id === c.id);
+          Object.assign(existing, row);
+          persist();
+          return { ...existing };
+        }
+        const created = { ...row, id: uid(), created_at: now() };
+        state.correspondence.push(created);
+        persist();
+        return { ...created };
+      },
+      async deleteCorrespondence(id) {
+        state.correspondence = (state.correspondence || []).filter((x) => x.id !== id);
+        persist();
+      },
       async listItems(section) {
         return (state.items || []).filter((x) => x.section === section).map(({ id, data, created_at }) => ({ id, data, created_at }));
       },
