@@ -1065,13 +1065,17 @@
     interviews.forEach((iv, i) => baseEvents.push({ date: iv.date, text: `Interview #${i + 1}`, sub: iv.with ? "with " + iv.with : "", kind: "reply" }));
     if (a.rejection_date) baseEvents.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin" });
     let mailEvents = [];
+    let tlOpen = false; // the timeline gets long, so it stays collapsed until asked for
     const timelineHtml = () => {
       const events = [...baseEvents, ...mailEvents].sort((x, y) => y.date.localeCompare(x.date));
-      return events.length ? `<div class="timeline">${events.map((e) => `
+      if (!events.length) return `<span class="muted">Nothing yet.</span>`;
+      const toggle = `<button type="button" class="btn${tlOpen ? " ghost" : ""}" data-tl-toggle aria-expanded="${tlOpen}">${tlOpen ? "Hide timeline" : `View timeline (${events.length})`}</button>`;
+      if (!tlOpen) return `<span class="muted small">Latest: ${esc(events[0].text)}, ${esc(fmtDate(events[0].date))}</span><div class="doc-actions">${toggle}</div>`;
+      return `<div class="timeline">${events.map((e) => `
                 <div class="tl-item">
                   <span class="tl-dot ${e.kind}"></span>
                   <div class="what"><b>${esc(e.text)}</b>${e.sub ? `<span>${esc(e.sub)}</span>` : ""}<span>${esc(fmtDate(e.date))}</span></div>
-                </div>`).join("")}</div>` : `<span class="muted">Nothing yet.</span>`;
+                </div>`).join("")}</div><div class="doc-actions">${toggle}</div>`;
     };
     const qs = questionsOf(a);
     const docBlock = (text, key, label) => `<div class="doc-wrap"><p class="notes-box doc-full">${esc(text)}</p>
@@ -1140,6 +1144,11 @@
           </div>
         </div>
       </div>`;
+    $("#tl-box", el).addEventListener("click", (e) => {
+      if (!e.target.closest("[data-tl-toggle]")) return;
+      tlOpen = !tlOpen;
+      $("#tl-box", el).innerHTML = timelineHtml();
+    });
     const openFile = async (path) => {
       // Open the tab right away so the browser doesn't block it, then point it at the file.
       const win = window.open("", "_blank");
