@@ -12,7 +12,7 @@
   const INTERACTION_FIELDS = ["contact_id", "kind", "method", "happened_on", "note"];
   const APPLICATION_FIELDS = [
     "position_title", "company", "location", "job_url", "job_description", "status", "date_applied", "rejection_date",
-    "interview_dates", "resume_track", "notes", "resume_text", "cover_letter", "application_answers",
+    "interview_dates", "interviews", "resume_track", "notes", "resume_text", "cover_letter", "application_answers",
     "questions", "resume_tailored", "resume_file_path", "resume_file_name",
   ];
   const OUTREACH_FIELDS = ["application_id", "group_id", "contact_id", "name", "title_company", "update_text", "sort_order"];
@@ -225,7 +225,8 @@
         applications: [
           { id: app1, position_title: "Associate Product Manager", company: "Acme Corp", location: "Seattle, WA",
             job_url: "https://jobs.example.com/apm", status: "completed", date_applied: "2026-09-02", rejection_date: null,
-            interview_dates: ["2026-09-18", "2026-09-25"], resume_track: "product", notes: "Referred by Priya.", created_at: now() },
+            interview_dates: ["2026-09-18", "2026-09-25"],
+            interviews: [{ date: "2026-09-18", with: "Dana Lee (Hiring Manager)" }, { date: "2026-09-25", with: "Priya Shah and the product team" }], resume_track: "product", notes: "Referred by Priya.", created_at: now() },
           { id: uid(), position_title: "Creative Operations Coordinator", company: "Globex", location: "Remote",
             job_url: "", status: "completed", date_applied: "2026-06-20", rejection_date: null,
             interview_dates: [], resume_track: "ea_creative_ops", notes: "", created_at: now() },

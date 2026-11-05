@@ -1048,17 +1048,35 @@
     }));
   }
 
+  // Interview rounds as {date, with}, oldest first. Older records only have dates.
+  function interviewsOf(a) {
+    const list = Array.isArray(a.interviews) && a.interviews.length ? a.interviews : (a.interview_dates || []).map((d) => ({ date: d, with: "" }));
+    return list.map((x) => ({ date: x.date, with: x.with || "" })).filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
+  }
+
   function renderAppView(el, a) {
     const st = stageOf(a);
     const flash = takeFlash();
     const sub = [a.company, a.location].filter(Boolean).join(" · ");
     const job = safeUrl(a.job_url);
-    const interviews = [...(a.interview_dates || [])].sort();
-    const events = [];
-    if (a.status === "completed" && a.date_applied) events.push({ date: a.date_applied, text: "Applied", kind: "outreach" });
-    interviews.forEach((d, i) => events.push({ date: d, text: `Interview #${i + 1}`, kind: "reply" }));
-    if (a.rejection_date) events.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin" });
-    events.sort((x, y) => y.date.localeCompare(x.date));
+    const interviews = interviewsOf(a);
+    const baseEvents = [];
+    if (a.status === "completed" && a.date_applied) baseEvents.push({ date: a.date_applied, text: "Applied", kind: "outreach" });
+    interviews.forEach((iv, i) => baseEvents.push({ date: iv.date, text: `Interview #${i + 1}`, sub: iv.with ? "with " + iv.with : "", kind: "reply" }));
+    if (a.rejection_date) baseEvents.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin" });
+    let mailEvents = [];
+    let tlOpen = false; // the timeline gets long, so it stays collapsed until asked for
+    const timelineHtml = () => {
+      const events = [...baseEvents, ...mailEvents].sort((x, y) => y.date.localeCompare(x.date));
+      if (!events.length) return `<span class="muted">Nothing yet.</span>`;
+      const toggle = `<button type="button" class="btn${tlOpen ? " ghost" : ""}" data-tl-toggle aria-expanded="${tlOpen}">${tlOpen ? "Hide timeline" : `View timeline (${events.length})`}</button>`;
+      if (!tlOpen) return `<span class="muted small">Latest: ${esc(events[0].text)}, ${esc(fmtDate(events[0].date))}</span><div class="doc-actions">${toggle}</div>`;
+      return `<div class="timeline">${events.map((e) => `
+                <div class="tl-item">
+                  <span class="tl-dot ${e.kind}"></span>
+                  <div class="what"><b>${esc(e.text)}</b>${e.sub ? `<span>${esc(e.sub)}</span>` : ""}<span>${esc(fmtDate(e.date))}</span></div>
+                </div>`).join("")}</div><div class="doc-actions">${toggle}</div>`;
+    };
     const qs = questionsOf(a);
     const docBlock = (text, key, label) => `<div class="doc-wrap"><p class="notes-box doc-full">${esc(text)}</p>
       <button class="icon-btn doc-copy" type="button" data-copy-doc="${esc(key)}" title="Copy ${label}" aria-label="Copy ${label}">${I.copy()}</button></div>
@@ -1118,14 +1136,19 @@
               <span class="muted small">Entering a date applied in the edit form marks it Applied.</span>`)}
             ${sec("Resume", 4, resumeBody)}
             ${sec("Interview prep", 7, `<div id="prep-box"><span class="muted">Loading…</span></div><input type="file" id="prep-file" hidden>`)}
-            ${sec("Timeline", 10, events.length ? `<div class="timeline">${events.map((e) => `
-                <div class="tl-item">
-                  <span class="tl-dot ${e.kind}"></span>
-                  <div class="what"><b>${esc(e.text)}</b><span>${esc(fmtDate(e.date))}</span></div>
-                </div>`).join("")}</div>` : `<span class="muted">Nothing yet.</span>`)}
+            ${sec("Interviews", 9, interviews.length ? `<div class="iv-list">${interviews.map((iv, n) => `
+                <div class="iv-item"><b>Interview #${n + 1}</b><span>${esc(fmtDate(iv.date))}</span><span class="muted">${iv.with ? "with " + esc(iv.with) : "Who it was with: not recorded"}</span></div>`).join("")}</div>`
+              : `<span class="muted">No interviews yet. Add them with the edit button.</span>`,
+              { right: interviews.length ? `<span class="sec-count">${interviews.length}</span>` : "" })}
+            ${sec("Timeline", 10, `<div id="tl-box">${timelineHtml()}</div>`)}
           </div>
         </div>
       </div>`;
+    $("#tl-box", el).addEventListener("click", (e) => {
+      if (!e.target.closest("[data-tl-toggle]")) return;
+      tlOpen = !tlOpen;
+      $("#tl-box", el).innerHTML = timelineHtml();
+    });
     const openFile = async (path) => {
       // Open the tab right away so the browser doesn't block it, then point it at the file.
       const win = window.open("", "_blank");
@@ -1412,6 +1435,10 @@
       try { mails = await backend.listApplicationEmails(a.id); } catch (e) { /* table not created yet */ }
       const box = $("#mail-box", el);
       if (!box) return;
+      mailEvents = mails.filter((m) => m.happened_on).map((m) => ({ date: m.happened_on, kind: m.direction === "out" ? "outreach" : "reply",
+        text: m.direction === "out" ? "Email sent" : "Reply received", sub: m.counterpart ? (m.direction === "out" ? "to " : "from ") + m.counterpart : "" }));
+      const tl = $("#tl-box", el);
+      if (tl) tl.innerHTML = timelineHtml();
       $("#mail-count", el).textContent = mails.length || "";
       box.innerHTML = mails.length ? `<div class="mail-list">${mails.map((m) => `
         <div class="mail-row"><span class="badge ${m.direction === "out" ? "" : "yes"}">${m.direction === "out" ? "Sent" : "Received"}</span>
@@ -1430,7 +1457,7 @@
   }
 
   function renderAppForm(el, existing) {
-    const a = existing || { status: "to_start", date_applied: null, interview_dates: [] };
+    const a = existing || { status: "to_start", date_applied: null, interview_dates: [], interviews: [] };
     const text = (name, label, type = "text", extra = "") =>
       `<div class="field"><label for="a-${name}">${label}</label><input id="a-${name}" name="${name}" type="${type}" value="${esc(a[name])}"${extra}></div>`;
     el.innerHTML = `
@@ -1529,16 +1556,17 @@
     });
 
     // Interviews: a date per round, added or removed here.
-    const addIv = (d = "") => {
+    const addIv = (d = "", who = "") => {
       const row = document.createElement("div");
       row.className = "iv-row";
       row.innerHTML = `<input type="date" class="iv-date" aria-label="Interview date" value="${esc(d)}">
+        <input type="text" class="iv-with" aria-label="Who the interview was with" placeholder="With (name, title)" value="${esc(who)}">
         <button type="button" class="icon-btn" aria-label="Remove interview" title="Remove">${I.trash(14)}</button>`;
       $("#iv-list", el).appendChild(row);
       $("button", row).addEventListener("click", () => row.remove());
       if (!d) $("input", row).focus();
     };
-    (a.interview_dates || []).forEach((d) => addIv(d));
+    interviewsOf(a).forEach((iv) => addIv(iv.date, iv.with));
     $("#add-iv", el).addEventListener("click", () => addIv());
     // Emails the Gmail sync matched to this application: pick one to add its date as an interview
     // (the interview itself is usually later, so the date can be changed afterwards).
@@ -1590,7 +1618,9 @@
       }
       const fd = new FormData(form);
       const data = { id: existing ? existing.id : undefined };
-      data.interview_dates = $$(".iv-date", el).map((i) => i.value).filter(Boolean).sort();
+      data.interviews = $$(".iv-row", el).map((r) => ({ date: $(".iv-date", r).value, with: $(".iv-with", r).value.trim() }))
+        .filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
+      data.interview_dates = data.interviews.map((x) => x.date);
       for (const [k, v] of fd.entries()) data[k] = typeof v === "string" ? v.trim() : v;
       data.resume_tailored = data.resume_kind === "tailored";
       data.resume_track = !data.resume_kind || data.resume_tailored ? null : data.resume_kind;
