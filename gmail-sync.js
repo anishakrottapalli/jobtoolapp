@@ -54,15 +54,29 @@ function sync() {
   });
   const logged = events.length ? rpc_('gmail_sync_log', { p_token: SYNC_TOKEN, p_events: events }) : 0;
 
-  // Jobs folder: match each email to an application by company, and log it there.
+  // Jobs folder: match each email to an application by the person's email address, else by company, and log it there.
   const apps = rpc_('gmail_sync_applications', { p_token: SYNC_TOKEN }).map((a) => ({ id: a.id, key: companyKey_(a.company), words: companyWords_(a.company).join(' ') }))
     .filter((a) => a.key.length >= 3);
+  // People you've linked to an application (in its outreach log or as an interviewer): their email address decides the application.
+  const byEmail = {};
+  rpc_('gmail_sync_contact_applications', { p_token: SYNC_TOKEN }).forEach((r) => {
+    (byEmail[r.email] = byEmail[r.email] || []).push(r.application_id);
+  });
   const jobs = folderMessages_(JOBS_FOLDER, true);
   const jobEvents = [];
+  // Networking emails with someone linked to an application also show under that application.
+  networking.forEach((m) => people_(m, me).forEach((p) => (byEmail[p.email] || []).forEach((appId) =>
+    jobEvents.push({ id: m.id, application_id: appId, email: p.email, dir: m.sent ? 'out' : 'in', date: day(m) }))));
   jobs.forEach((m) => {
     const others = people_(m, me);
     let found = false;
     others.forEach((p) => {
+      const linked = byEmail[p.email] || [];
+      linked.forEach((appId) => {
+        found = true;
+        jobEvents.push({ id: m.id, application_id: appId, email: p.email, dir: m.sent ? 'out' : 'in', date: day(m) });
+      });
+      if (linked.length) return;
       const app = matchApp_(p, apps);
       if (app) {
         found = true;
