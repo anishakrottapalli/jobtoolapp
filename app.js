@@ -53,6 +53,7 @@
     external: (s = 15) => svg(s, '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>'),
     users: (s = 17) => svg(s, '<path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1"/><circle cx="9" cy="8" r="4"/><path d="M22 20v-1a4 4 0 0 0-3-3.87M16 4.13a4 4 0 0 1 0 7.75"/>'),
     user: (s = 17) => svg(s, '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>'),
+    building: (s = 17) => svg(s, '<rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M10 21v-4h4v4"/>'),
     target: (s = 17) => svg(s, '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>'),
     copy: (s = 16) => svg(s, '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>'),
     doc: (s = 20) => svg(s, '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5zM14 3v5h5M9 13h6M9 17h4"/>'),
@@ -607,6 +608,7 @@
             <a class="nav-item" data-nav="dashboard" href="#/">${I.home()}<span>Dashboard</span></a>
             <a class="nav-item" data-nav="contacts" href="#/contacts">${I.users()}<span>Contacts</span><span class="count mono" id="nav-count"></span></a>
             <a class="nav-item" data-nav="applications" href="#/applications">${I.briefcase()}<span>Applications</span><span class="count mono" id="nav-app-count"></span></a>
+            <a class="nav-item" data-nav="companies" href="#/companies">${I.building()}<span>Companies</span></a>
             <a class="nav-item" data-nav="profile" href="#/profile">${I.user()}<span>Profile</span></a>
             <a class="nav-item" data-nav="resources" href="#/resources">${I.book()}<span>Resources</span></a>
             <a class="nav-item" data-nav="vision" href="#/vision">${I.target()}<span>Career Vision</span></a>`)}
@@ -720,6 +722,7 @@
     if (p === "resources") renderResourcesPage(page);
     else if (p === "profile") renderProfilePage(page);
     else if (p === "vision") renderVisionPage(page);
+    else if (p === "companies") renderCompaniesPage(page);
     else if (p === "export") renderExportPage(page);
     else if (p === "settings") renderSettingsPage(page);
     else if (p === "dashboard") renderDashboardPage(page);
@@ -2075,14 +2078,14 @@
             <button class="icon-btn" data-del="${it.id}" aria-label="Delete" title="Delete">${I.trash()}</button>
           </div>
         </div>`;
-      const grid = (rows) => `<div class="item-grid${cfg.compact ? " compact" : ""}${cfg.wide ? " wide" : ""}">${rows.map(card).join("")}</div>`;
+      const grid = (rows) => `<div class="item-grid${cfg.compact ? " compact" : ""}${cfg.wide ? " wide" : ""}${cfg.gridClass ? " " + cfg.gridClass : ""}">${rows.map(card).join("")}</div>`;
       let listHtml;
       if (cfg.groupBy) {
         const groups = new Map();
         list.forEach((it) => { const g = cfg.groupBy(it.data); groups.set(g, [...(groups.get(g) || []), it]); });
         listHtml = [...groups].sort((a, b) => a[0].localeCompare(b[0])).map(([g, rows]) => `<h3 class="group-title">${esc(g)} <span class="muted small">${rows.length}</span></h3>${grid(rows)}`).join("");
       } else listHtml = grid(list);
-      body.innerHTML = form + (list.length ? listHtml : editing ? "" : `<div class="card empty"><p>${cfg.empty}</p></div>`);
+      body.innerHTML = form + (cfg.summary && items.length ? cfg.summary(items.map((x) => x.data)) : "") + (list.length ? listHtml : editing ? "" : `<div class="card empty"><p>${cfg.empty}</p></div>`);
       const formEl = $("form", body);
       if (formEl) {
         $("[data-cancel]", formEl).addEventListener("click", () => { editing = null; draw(); });
@@ -2329,24 +2332,71 @@
     mountFiles($("#rs-prep", page), "resources", "files", "No interview prep files yet. Upload a PDF or a markdown file.", ".pdf,.doc,.docx,.md,.markdown,application/pdf,text/markdown");
   }
 
+  // Companies you'd like to work for, with the people you know there and any applications you have with them.
+  function renderCompaniesPage(page) {
+    page.innerHTML = pageHead("Companies of interest", "Places you'd like to work, even if no role is open yet.")
+      + block("co-list", "Companies", "Add a company, why it interests you, and where it stands.", addBtn("Add company"));
+    const rank = { Researching: 0, Watching: 1, Applied: 2 };
+    mountItems($("#co-list", page), "company_interest", {
+      empty: "No companies yet. Add the first one you'd love to work for.",
+      sort: (a, b) => (rank[a.status] ?? 0) - (rank[b.status] ?? 0) || (a.company || "").localeCompare(b.company || ""),
+      fields: [
+        { name: "company", label: "Company", required: true, placeholder: "e.g. Acme Corp" },
+        { name: "status", label: "Status", type: "select", options: ["Researching", "Watching", "Applied"] },
+        { name: "link", label: "Careers page or website", type: "url", placeholder: "https://…" },
+        { name: "why", label: "Why it interests you", type: "textarea" },
+      ],
+      render: (d) => {
+        const people = state.contacts.filter((c) => sameCompany(c.company, d.company));
+        const apps = state.applications.filter((a) => sameCompany(a.company, d.company));
+        const url = safeUrl(d.link);
+        return `<b>${esc(d.company)}</b>
+          <span class="item-sub"><span class="badge ${d.status === "Applied" ? "yes" : d.status === "Watching" ? "solid" : ""}">${esc(d.status || "Researching")}</span>
+            ${url ? ` <a href="${esc(url)}" target="_blank" rel="noopener">${esc(hostOf(url))} ↗</a>` : ""}</span>
+          ${d.why ? `<span class="item-text">${esc(d.why)}</span>` : ""}
+          <span class="item-sub">${people.length ? `You know ${people.map((c) => `<a href="#/contact/${esc(c.id)}">${esc(fullName(c))}</a>`).join(", ")}` : "No one in your Contacts yet"}</span>
+          ${apps.length ? `<span class="item-sub">${apps.map((a) => `<a href="#/application/${esc(a.id)}">${esc(a.position_title)}</a>`).join(", ")}</span>` : ""}`;
+      },
+    });
+  }
+
   function renderVisionPage(page) {
     page.innerHTML = pageHead("Career Vision", "Where you're headed.")
       + block("cv-dream", "Dream job", "Describe it: the role, the kind of company, what a good day looks like.", "")
       + block("cv-road", "Career roadmap", "The steps between here and there.", addBtn("Add milestone"));
     mountNote($("#cv-dream", page), "dream_job", "Role, industry, team size, responsibilities, location, what matters most...");
     const rank = { "In progress": 0, Planned: 1, Done: 2 };
+    const byDate = (a, b) => (a.target || "9999").localeCompare(b.target || "9999");
     mountItems($("#cv-road", page), "milestone", {
       empty: "No milestones yet. Add the next step.",
-      sort: (a, b) => (rank[a.status] ?? 1) - (rank[b.status] ?? 1) || (a.target || "9999").localeCompare(b.target || "9999"),
+      gridClass: "roadmap",
+      // A path from top to bottom in date order; the dot on each step shows where it stands.
+      sort: (a, b) => byDate(a, b) || (rank[b.status] ?? 1) - (rank[a.status] ?? 1),
+      summary: (list) => {
+        const done = list.filter((d) => d.status === "Done").length;
+        const doing = list.filter((d) => d.status === "In progress").length;
+        const next = list.filter((d) => d.status !== "Done").sort((a, b) => (rank[a.status] ?? 1) - (rank[b.status] ?? 1) || byDate(a, b))[0];
+        return `<div class="card rm-summary">
+          <div class="rm-bar" role="img" aria-label="${done} of ${list.length} milestones done"><span style="width:${Math.round((done / list.length) * 100)}%"></span></div>
+          <div class="rm-meta"><b>${done} of ${list.length} done</b>
+            <span class="muted">${doing ? doing + " in progress · " : ""}${next ? "Next: " + esc(next.title) : "All milestones done"}</span></div></div>`;
+      },
       fields: [
         { name: "title", label: "Milestone", required: true, placeholder: "e.g. Land a PM internship" },
         { name: "target", label: "Target date", type: "date" },
         { name: "status", label: "Status", type: "select", options: ["Planned", "In progress", "Done"] },
         { name: "details", label: "Details", type: "textarea" },
       ],
-      render: (d) => `<b>${esc(d.title)}</b>
-        <span class="item-sub"><span class="badge ${d.status === "Done" ? "yes" : d.status === "In progress" ? "solid" : ""}">${esc(d.status || "Planned")}</span>${d.target ? " " + esc(fmtDate(d.target)) : ""}</span>
-        ${d.details ? `<span class="item-text">${esc(d.details)}</span>` : ""}`,
+      render: (d) => {
+        const st = d.status || "Planned";
+        const cls = st === "Done" ? "done" : st === "In progress" ? "now" : "next";
+        return `<span class="rm-dot ${cls}" aria-hidden="true">${st === "Done" ? I.check(13) : ""}</span>
+          <div class="rm-body">
+            <div class="rm-top"><b>${esc(d.title)}</b><span class="badge sm ${st === "Done" ? "yes" : st === "In progress" ? "solid" : ""}">${esc(st)}</span></div>
+            <span class="rm-date">${d.target ? esc(fmtDate(d.target)) : "No date yet"}</span>
+            ${d.details ? `<details class="rm-details"><summary>Details</summary><p>${esc(d.details)}</p></details>` : ""}
+          </div>`;
+      },
     });
   }
 
@@ -3023,6 +3073,7 @@
     if (h === "/profile") return { page: "profile" };
     if ((m = h.match(/^\/profile\/(resume|skills|references|certificates)$/))) return { page: "profile", sub: m[1] };
     if (h === "/vision") return { page: "vision" };
+    if (h === "/companies") return { page: "companies" };
     if (h === "/export") return { page: "export" };
     if (h === "/settings") return { page: "settings" };
     return { page: "dashboard" };
