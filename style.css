@@ -654,6 +654,18 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .rm-details summary { cursor: pointer; color: var(--link); font-size: 13px; width: fit-content; }
 .rm-details p { margin: 6px 0 0; color: var(--fg-2); font-size: 13px; white-space: pre-wrap; }
 
+/* career vision: trajectory */
+.traj { padding: 18px 20px; display: flex; flex-direction: column; }
+.traj-stage { position: relative; display: flex; gap: 14px; padding-bottom: 22px; }
+.traj-stage:last-child { padding-bottom: 0; }
+.traj-stage::before { content: ""; position: absolute; left: 10px; top: 24px; bottom: 0; width: 2px; background: var(--line-2); }
+.traj-stage:last-child::before { display: none; }
+.rm-dot.goal { background: var(--accent); color: #fff; box-shadow: 0 0 0 4px var(--accent-soft); }
+.traj-roles { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.traj-role { padding: 8px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--card-2, var(--card)); }
+.traj-stage.goal .traj-role { border-color: var(--accent-line); background: var(--accent-soft); }
+.traj-title { font-weight: 600; font-size: 14px; }
+
 /* application form: status buttons */
 .status-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 
