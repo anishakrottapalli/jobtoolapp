@@ -1059,15 +1059,31 @@
     const flash = takeFlash();
     const sub = [a.company, a.location].filter(Boolean).join(" · ");
     const job = safeUrl(a.job_url);
-    const interviews = interviewsOf(a);
-    const baseEvents = [];
-    if (a.status === "completed" && a.date_applied) baseEvents.push({ date: a.date_applied, text: "Applied", kind: "outreach" });
-    interviews.forEach((iv, i) => baseEvents.push({ date: iv.date, text: `Interview #${i + 1}`, sub: iv.with ? "with " + iv.with : "", kind: "reply" }));
-    if (a.rejection_date) baseEvents.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin" });
+    let interviews = interviewsOf(a);
+    const baseEvents = () => {
+      const ev = [];
+      if (a.status === "completed" && a.date_applied) ev.push({ date: a.date_applied, text: "Applied", kind: "outreach" });
+      interviews.forEach((iv, i) => ev.push({ date: iv.date, text: `Interview #${i + 1}`, sub: iv.with ? "with " + iv.with : "", kind: "reply" }));
+      if (a.rejection_date) ev.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin" });
+      return ev;
+    };
     let mailEvents = [];
+    let ivEdit = false; // editing the Interviews box in place
+    const ivRowHtml = (iv = { date: "", with: "" }) => `<div class="iv-row">
+        <input type="date" class="iv-date" aria-label="Interview date" value="${esc(iv.date)}">
+        <input type="text" class="iv-with" aria-label="Who the interview was with" placeholder="With (name, title)" value="${esc(iv.with)}">
+        <button type="button" class="icon-btn" data-iv-del aria-label="Remove interview" title="Remove">${I.trash(14)}</button></div>`;
+    const interviewsHtml = () => ivEdit
+      ? `<div id="iv-rows">${(interviews.length ? interviews : [undefined]).map(ivRowHtml).join("")}</div>
+         <div class="doc-actions"><button type="button" class="btn" data-iv-add>${I.plus(15)} Add interview</button></div>
+         <div class="doc-actions"><button type="button" class="btn ghost" data-iv-cancel>Cancel</button><button type="button" class="btn primary" data-iv-save>Save</button></div>`
+      : (interviews.length ? `<div class="iv-list">${interviews.map((iv, n) => `
+          <div class="iv-item"><b>Interview #${n + 1}</b><span>${esc(fmtDate(iv.date))}</span><span class="muted">${iv.with ? "with " + esc(iv.with) : "Who it was with: not recorded"}</span></div>`).join("")}</div>`
+        : `<span class="muted">No interviews yet.</span>`)
+        + `<div class="doc-actions"><button type="button" class="btn" data-iv-edit>${interviews.length ? I.pencil(14) + " Edit interviews" : I.plus(15) + " Add interview"}</button></div>`;
     let tlOpen = false; // the timeline gets long, so it stays collapsed until asked for
     const timelineHtml = () => {
-      const events = [...baseEvents, ...mailEvents].sort((x, y) => y.date.localeCompare(x.date));
+      const events = [...baseEvents(), ...mailEvents].sort((x, y) => y.date.localeCompare(x.date));
       if (!events.length) return `<span class="muted">Nothing yet.</span>`;
       const toggle = `<button type="button" class="btn${tlOpen ? " ghost" : ""}" data-tl-toggle aria-expanded="${tlOpen}">${tlOpen ? "Hide timeline" : `View timeline (${events.length})`}</button>`;
       if (!tlOpen) return `<span class="muted small">Latest: ${esc(events[0].text)}, ${esc(fmtDate(events[0].date))}</span><div class="doc-actions">${toggle}</div>`;
@@ -1136,14 +1152,34 @@
               <span class="muted small">Entering a date applied in the edit form marks it Applied.</span>`)}
             ${sec("Resume", 4, resumeBody)}
             ${sec("Interview prep", 7, `<div id="prep-box"><span class="muted">Loading…</span></div><input type="file" id="prep-file" hidden>`)}
-            ${sec("Interviews", 9, interviews.length ? `<div class="iv-list">${interviews.map((iv, n) => `
-                <div class="iv-item"><b>Interview #${n + 1}</b><span>${esc(fmtDate(iv.date))}</span><span class="muted">${iv.with ? "with " + esc(iv.with) : "Who it was with: not recorded"}</span></div>`).join("")}</div>`
-              : `<span class="muted">No interviews yet. Add them with the edit button.</span>`,
-              { right: interviews.length ? `<span class="sec-count">${interviews.length}</span>` : "" })}
+            ${sec("Interviews", 9, `<div id="iv-box">${interviewsHtml()}</div>`)}
             ${sec("Timeline", 10, `<div id="tl-box">${timelineHtml()}</div>`)}
           </div>
         </div>
       </div>`;
+    const ivBox = $("#iv-box", el);
+    ivBox.addEventListener("click", async (e) => {
+      const t = e.target.closest("button");
+      if (!t) return;
+      const d = t.dataset;
+      if ("ivEdit" in d) ivEdit = true;
+      else if ("ivCancel" in d) ivEdit = false;
+      else if ("ivAdd" in d) {
+        $("#iv-rows", ivBox).insertAdjacentHTML("beforeend", ivRowHtml());
+        $$(".iv-with", ivBox).pop().previousElementSibling.focus();
+        return;
+      } else if ("ivDel" in d) { t.closest(".iv-row").remove(); return; }
+      else if ("ivSave" in d) {
+        const list = $$(".iv-row", ivBox).map((r) => ({ date: $(".iv-date", r).value, with: $(".iv-with", r).value.trim() }))
+          .filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
+        const saved = await run(() => backend.saveApplication({ ...a, interviews: list, interview_dates: list.map((x) => x.date) }), el);
+        Object.assign(a, saved);
+        interviews = interviewsOf(a);
+        ivEdit = false;
+        $("#tl-box", el).innerHTML = timelineHtml();
+      } else return;
+      ivBox.innerHTML = interviewsHtml();
+    });
     $("#tl-box", el).addEventListener("click", (e) => {
       if (!e.target.closest("[data-tl-toggle]")) return;
       tlOpen = !tlOpen;
