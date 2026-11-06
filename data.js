@@ -184,8 +184,12 @@
       async deleteContact(id) {
         check(await sb.from("contacts").delete().eq("id", id));
       },
+      // application_id only goes to the database when there is one, so entries not about a job still save
+      // before migration 018 has been run.
       async addInteraction(i) {
-        return check(await sb.from("interactions").insert(pick(i, INTERACTION_FIELDS)).select().single());
+        const row = pick(i, INTERACTION_FIELDS);
+        if (!row.application_id) delete row.application_id;
+        return check(await sb.from("interactions").insert(row).select().single());
       },
       async updateInteraction(i) {
         return check(await sb.from("interactions").update(pick(i, INTERACTION_FIELDS)).eq("id", i.id).select().single());
