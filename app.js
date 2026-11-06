@@ -39,7 +39,7 @@
   const TRACKS = [["product", "Product"], ["ea_creative_ops", "EA–Creative Ops"], ["content_media_ops", "Content–Media Ops"]];
   const GHOST_DAYS = 60;
   const APP_FILTERS = [["all", "All"], ["inplay", "In play"], ["to_start", "To Start"], ["in_progress", "In progress"], ["applied", "Applied"],
-    ["interviewing", "Interviewing"], ["ghosted", "Ghosted"], ["rejected", "Rejected"]];
+    ["interviewing", "Interviewing"], ["offer_received", "Offer received"], ["offer_rejected", "Offer rejected"], ["ghosted", "Ghosted"], ["rejected", "Rejected"]];
 
   // ---------- icons (inline stroke SVG) ----------
 
@@ -53,6 +53,7 @@
     users: (s = 17) => svg(s, '<path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1"/><circle cx="9" cy="8" r="4"/><path d="M22 20v-1a4 4 0 0 0-3-3.87M16 4.13a4 4 0 0 1 0 7.75"/>'),
     user: (s = 17) => svg(s, '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>'),
     building: (s = 17) => svg(s, '<rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M10 21v-4h4v4"/>'),
+    paperclip: (s = 17) => svg(s, '<path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L14 5a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4L15 8.5"/>'),
     target: (s = 17) => svg(s, '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>'),
     copy: (s = 16) => svg(s, '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>'),
     doc: (s = 20) => svg(s, '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5zM14 3v5h5M9 13h6M9 17h4"/>'),
@@ -1025,6 +1026,8 @@
   function stageOf(a) {
     if (a.status === "in_progress") return { key: "in_progress", label: "In progress", cls: "" };
     if (a.status !== "completed") return { key: "to_start", label: "To Start", cls: "" };
+    if (a.offer_rejected_date) return { key: "offer_rejected", label: "Offer Rejected", cls: "muted-badge" };
+    if (a.offer_date) return { key: "offer_received", label: "Offer Received", cls: "solid" };
     if (a.rejection_date) return { key: "rejected", label: "Rejected", cls: "muted-badge" };
     const rounds = (a.interview_dates || []).length;
     if (rounds) return { key: "interviewing", label: rounds > 1 ? `Interviewing · ${rounds} rounds` : "Interviewing", cls: "solid" };
@@ -1034,13 +1037,56 @@
     return { key: "applied", label: d ? `Applied · ${d}d` : "Applied today", cls: "yes" };
   }
 
+  const agoText = (iso) => { const d = daysSince(iso); return d === 0 ? "today" : d === 1 ? "1 day ago" : `${d} days ago`; };
+  // The line under the stage name in the Overview.
+  function stageSub(a, st) {
+    const last = interviewsOf(a).slice(-1)[0];
+    if (st.key === "applied") return a.date_applied ? agoText(a.date_applied) : "";
+    if (st.key === "ghosted") return "Applied " + agoText(a.date_applied);
+    if (st.key === "interviewing") return last ? "Latest: " + fmtDate(last.date) + (last.with ? " with " + last.with : "") : "";
+    if (st.key === "offer_received") return fmtDate(a.offer_date);
+    if (st.key === "offer_rejected") return fmtDate(a.offer_rejected_date);
+    if (st.key === "rejected") return fmtDate(a.rejection_date);
+    if (st.key === "in_progress") return "Started, not submitted";
+    return "Not applied yet";
+  }
+
+  // Job descriptions are stored as simple formatted text (paragraphs, bullets, numbering, bold, links).
+  const RICH_TAGS = ["p", "br", "ul", "ol", "li", "strong", "b", "em", "i", "u", "h1", "h2", "h3", "h4", "h5", "h6", "a", "blockquote", "div", "span", "pre", "code", "hr"];
+  const textToHtml = (t) => esc(t || "").replace(/\r?\n/g, "<br>");
+  function cleanHtml(html) {
+    const doc = new DOMParser().parseFromString(html || "", "text/html");
+    // Google Docs wraps everything in <b style="font-weight:normal">: unwrap it so the whole page isn't bold.
+    doc.querySelectorAll("b, strong").forEach((n) => { if (/font-weight:\s*(normal|400)/i.test(n.getAttribute("style") || "")) n.replaceWith(...n.childNodes); });
+    // Rebuild only what is allowed: known tags with no attributes (links keep a safe href). Scripts, styles and
+    // everything else are dropped, so pasted pages can't bring anything harmful or messy styling with them.
+    const DROP = new Set(["script", "style", "head", "meta", "link", "title", "iframe", "object", "embed", "noscript", "template", "svg", "math"]);
+    const walk = (from, to) => from.childNodes.forEach((n) => {
+      if (n.nodeType === 3) { to.appendChild(document.createTextNode(n.nodeValue)); return; }
+      if (n.nodeType !== 1) return;
+      const tag = n.tagName.toLowerCase();
+      if (DROP.has(tag)) return;
+      if (!RICH_TAGS.includes(tag)) { walk(n, to); return; } // unknown tag: keep its text
+      const c = document.createElement(tag);
+      const href = tag === "a" ? (n.getAttribute("href") || "").trim() : "";
+      if (/^(https?:|mailto:)/i.test(href)) { c.setAttribute("href", href); c.target = "_blank"; c.rel = "noopener noreferrer"; }
+      walk(n, c);
+      to.appendChild(c);
+    });
+    const box = document.createElement("div");
+    walk(doc.body, box);
+    return box.innerHTML;
+  }
+  const looksHtml = (s) => /<\/?(p|br|ul|ol|li|div|strong|b|em|i|u|h[1-6]|a|span|blockquote)\b/i.test(s || "");
+  const descHtml = (s) => (!s ? "" : looksHtml(s) ? cleanHtml(s) : textToHtml(s));
+
   function appStats() {
     const mondayISO = isoOf(weekStart());
     const stages = state.applications.map(stageOf);
     return {
       total: state.applications.filter((a) => a.status === "completed").length,
       thisWeek: state.applications.filter((a) => a.status === "completed" && a.date_applied >= mondayISO).length,
-      inPlay: stages.filter((s) => !["rejected", "to_start", "in_progress", "ghosted"].includes(s.key)).length,
+      inPlay: stages.filter((s) => !["rejected", "offer_rejected", "to_start", "in_progress", "ghosted"].includes(s.key)).length,
       interviewing: stages.filter((s) => s.key === "interviewing").length,
       ghosted: stages.filter((s) => s.key === "ghosted").length,
     };
@@ -1050,7 +1096,7 @@
     const { q, stage, track } = state.appFilters;
     const match = searchMatcher(q);
     const rows = state.applications.map((a) => ({ a, st: stageOf(a) })).filter(({ a, st }) => {
-      if (stage === "inplay" && ["rejected", "to_start", "in_progress", "ghosted"].includes(st.key)) return false;
+      if (stage === "inplay" && ["rejected", "offer_rejected", "to_start", "in_progress", "ghosted"].includes(st.key)) return false;
       if (stage !== "all" && stage !== "inplay" && st.key !== stage) return false;
       if (track && resumeChoice(a) !== track) return false;
       if (match) {
@@ -1060,7 +1106,7 @@
       return true;
     });
     const { key, dir } = state.appSort;
-    const order = { to_start: 0, in_progress: 1, applied: 2, interviewing: 3, ghosted: 4, rejected: 5 };
+    const order = { to_start: 0, in_progress: 1, applied: 2, interviewing: 3, ghosted: 4, offer_received: 5, offer_rejected: 6, rejected: 7 };
     const val = ({ a, st }) => (key === "stage" ? String(order[st.key]) : key === "resume" ? resumeLabel(a) : a[key] || "");
     rows.sort((x, y) => {
       const vx = val(x), vy = val(y);
@@ -1073,10 +1119,10 @@
 
   function exportApplications(list) {
     const header = ["Position Title", "Company", "Location", "Job Link", "Status", "Stage", "Date Applied",
-      "Interview Dates", "Rejection Date", "Resume", "Resume File", "Notes", "Cover Letter", "Questions", "Outreach"];
+      "Interview Dates", "Rejection Date", "Resume", "Resume File", "Notes", "Cover Letter", "Questions", "Outreach", "Offer Received", "Offer Rejected"];
     downloadCsv(`applications-${todayISO()}.csv`, header, list.map(({ a, st }) => [
       a.position_title, a.company, a.location, a.job_url, a.status === "completed" ? "Applied" : a.status === "in_progress" ? "In progress" : "To Start", st.label,
-      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, resumeLabel(a), a.resume_file_name, a.notes, a.cover_letter, questionsText(a), outreachText(a),
+      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, resumeLabel(a), a.resume_file_name, a.notes, a.cover_letter, questionsText(a), outreachText(a), a.offer_date, a.offer_rejected_date,
     ]));
   }
 
@@ -1194,6 +1240,8 @@
       const ev = [];
       if (a.status === "completed" && a.date_applied) ev.push({ date: a.date_applied, text: "Applied", kind: "outreach", type: "status" });
       interviews.forEach((iv, i) => ev.push({ date: iv.date, text: `Interview #${i + 1}`, sub: iv.with ? "with " + iv.with : "", kind: "reply", type: "iv" }));
+      if (a.offer_date) ev.push({ date: a.offer_date, text: "Offer received", kind: "reply", type: "status" });
+      if (a.offer_rejected_date) ev.push({ date: a.offer_rejected_date, text: "Offer rejected", kind: "linkedin", type: "status" });
       if (a.rejection_date) ev.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin", type: "status" });
       return ev;
     };
@@ -1223,31 +1271,78 @@
       if (!tlOpen) return `<span class="muted small">Latest: ${esc(events[0].text)}, ${esc(fmtDate(events[0].date))}</span><div class="doc-actions">${toggle}</div>`;
       const chips = `<div class="filters" role="group" aria-label="Filter the timeline">${[["all", "All"], ["corr", "Correspondence"], ["iv", "Interviews"], ["status", "Applied / rejected"]]
         .map(([v, l]) => `<button type="button" class="chip${tlFilter === v ? " on" : ""}" data-tl-filter="${v}" aria-pressed="${tlFilter === v}">${l}</button>`).join("")}</div>`;
-      return chips + (events.length ? "" : `<span class="muted">Nothing of that kind.</span>`) + `<div class="timeline">${events.map((e) => `
-                <div class="tl-item">
-                  <span class="tl-dot ${e.kind}"></span>
-                  <div class="what"><b>${esc(e.text)}</b>${e.sub ? `<span>${esc(e.sub)}</span>` : ""}<span>${esc(fmtDate(e.date))}</span></div>
-                </div>`).join("")}</div><div class="doc-actions">${toggle}</div>`;
+      let month = "";
+      const items = events.map((e) => {
+        const d = parseISO(e.date), m = d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+        const head = m !== month ? `<h4 class="tl-month">${esc(m)}</h4>` : "";
+        month = m;
+        const diff = Math.round((d - parseISO(todayISO())) / 86400000);
+        const rel = diff === 0 ? "Today" : diff < 0 ? (diff === -1 ? "1 day ago" : `${-diff} days ago`) : diff === 1 ? "Tomorrow" : `In ${diff} days`;
+        return `${head}<div class="tl-item tl-dated${diff === 0 ? " today" : diff > 0 ? " upcoming" : ""}">
+          <div class="tl-when"><b>${esc(d.toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</b><span>${d.getFullYear()}</span></div>
+          <span class="tl-dot ${e.kind}"></span>
+          <div class="what"><b>${esc(e.text)}</b>${e.sub ? `<span>${esc(e.sub)}</span>` : ""}<span class="tl-rel">${rel}</span></div></div>`;
+      }).join("");
+      return chips + (events.length ? "" : `<span class="muted">Nothing of that kind.</span>`) + `<div class="timeline">${items}</div><div class="doc-actions">${toggle}</div>`;
     };
     const qs = questionsOf(a);
-    const docBlock = (text, key, label) => `<div class="doc-wrap"><p class="notes-box doc-full">${esc(text)}</p>
-      <button class="icon-btn doc-copy" type="button" data-copy-doc="${esc(key)}" title="Copy ${label}" aria-label="Copy ${label}">${I.copy()}</button></div>
-      <div class="doc-actions"><span class="muted small">${wordCount(text)} words</span></div>`;
+    const growTa = (ta) => {
+      const fit = () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + 2 + "px"; };
+      ta.addEventListener("input", fit);
+      requestAnimationFrame(fit);
+    };
+    // One save at a time, so quick edits in different boxes can't overwrite each other.
+    let saveChain = Promise.resolve();
+    const saveApp = (patch, busyEl) => (saveChain = saveChain.then(async () => {
+      const saved = await run(() => backend.saveApplication({ ...a, ...patch }), busyEl);
+      Object.assign(a, saved);
+      return saved;
+    }).catch(() => {}));
+    const savedFlag = (sel) => {
+      const s = $(sel, el);
+      if (!s) return;
+      s.textContent = "Saved ✓";
+      setTimeout(() => { if (s.textContent === "Saved ✓") s.textContent = ""; }, 1500);
+    };
 
     el.classList.add("app-panel");
-    const stSub = st.key === "rejected" ? "on " + fmtDate(a.rejection_date) : st.key === "ghosted" ? "No response in " + GHOST_DAYS + "+ days" : st.key === "to_start" ? "Not applied yet" : st.key === "in_progress" ? "Started, not submitted" : "";
     const fact = (label, value, extra = "") => `<div class="fact"><span class="fact-l">${label}</span><span class="fact-v ${extra}">${value || `<span class="none">—</span>`}</span></div>`;
     const sec = (title, order, body, opts = {}) => `
         <section class="sec${opts.cls ? " " + opts.cls : ""}" style="order:${order}">
           <header class="sec-head"><h3>${title}</h3>${opts.right || ""}</header>
           <div class="sec-body">${body}</div>
         </section>`;
-    const resumeBody = (resumeChoice(a)
-      ? `<div class="doc-actions"><span class="badge ${a.resume_tailored ? "solid" : ""}">${a.resume_tailored ? "Tailored for this job" : esc(trackLabel(a.resume_track)) + " resume"}</span></div>`
-      : `<span class="muted">Not recorded</span>`)
-      + (a.resume_file_path ? `<div class="file-row">${I.download(15)}<span class="file-name">${esc(a.resume_file_name || "Resume file")}</span>
-              <button class="btn" type="button" id="open-resume">Open</button></div>`
-        : a.resume_tailored ? `<span class="muted">No file uploaded yet</span>` : "");
+
+    // Overview: the stage (with its date), when you applied, location and the posting link. Click to change.
+    let stageOpen = false, urlEdit = false;
+    const stageForm = () => {
+      const cur = a.status || "to_start";
+      return `<form class="stage-edit" id="stage-form">
+        <div class="status-btns" role="group" aria-label="Stage">${[["to_start", "To Start"], ["in_progress", "In progress"], ["completed", "Applied"]]
+          .map(([v, l]) => `<button type="button" class="btn${cur === v ? " primary" : ""}" data-stage="${v}" aria-pressed="${cur === v}">${l}</button>`).join("")}</div>
+        ${[["date_applied", "Date applied"], ["offer_date", "Offer received"], ["offer_rejected_date", "Offer rejected"], ["rejection_date", "Rejected"]]
+          .map(([k, l]) => `<div class="field"><label>${l}</label><input type="date" name="${k}" value="${esc(a[k] || "")}"></div>`).join("")}
+        <span class="muted small">Interviews go in the Interviews box below. The stage follows the dates.</span>
+      </form>`;
+    };
+    const overviewHtml = () => {
+      const st = stageOf(a), sub = stageSub(a, st), job = safeUrl(a.job_url);
+      return `<div class="facts">
+        <div class="fact"><span class="fact-l">Stage <button type="button" class="linkbtn" data-stage-toggle>${stageOpen ? "Close" : "Update"}</button></span>
+          <span class="fact-v ${st.key === "ghosted" ? "warn" : ""}">${esc(st.label)}${sub ? `<small>${esc(sub)}</small>` : ""}</span></div>
+        ${fact("Applied", a.status === "completed" && a.date_applied ? esc(fmtDate(a.date_applied)) + `<small>${agoText(a.date_applied)}</small>` : `<span class="muted">Not applied yet</span>`)}
+        ${fact("Location", esc(a.location))}
+        <div class="fact"><span class="fact-l">Job posting <button type="button" class="linkbtn" data-url-toggle>${urlEdit ? "Cancel" : job ? "Edit" : "Add"}</button></span>
+          <span class="fact-v">${urlEdit ? `<input class="inline-input" id="url-input" type="url" value="${esc(a.job_url)}" placeholder="https://…">`
+            : job ? `<a href="${esc(job)}" target="_blank" rel="noopener">Open posting ↗</a>` : `<span class="none">—</span>`}</span></div>
+      </div>${stageOpen ? stageForm() : ""}`;
+    };
+
+    const qaRow = (x = { q: "", a: "" }) => `<div class="qa-inline">
+      <div class="qa-top"><input class="qa-q inline-input" type="text" aria-label="Question" placeholder="Question" value="${esc(x.q)}">
+        <button type="button" class="icon-btn" data-qa-copy aria-label="Copy answer" title="Copy answer">${I.copy()}</button>
+        <button type="button" class="icon-btn" data-qa-del aria-label="Remove question" title="Remove question">${I.close(14)}</button></div>
+      <textarea class="qa-a inline-doc autogrow" rows="3" aria-label="Answer" placeholder="Answer">${esc(x.a)}</textarea></div>`;
 
     el.innerHTML = `
       <div class="panel-head">
@@ -1263,36 +1358,222 @@
         ${flash}
         <div class="app-layout">
           <div class="app-main">
-            ${sec("Job description", 2, a.job_description ? `<div class="prose jd">${esc(a.job_description)}</div>` : `<span class="muted">None added</span>`)}
-            ${sec("Notes", 3, a.notes ? `<p class="prose">${esc(a.notes)}</p>` : `<span class="muted">No notes</span>`)}
-            ${sec("Cover letter", 5, a.cover_letter ? docBlock(a.cover_letter, "cover_letter", "cover letter") : `<span class="muted">None added</span>`)}
-            ${sec("Questions", 6, qs.length ? qs.map((x, i) => `
-              <div class="qa">
-                ${x.q ? `<p class="qa-q">${esc(x.q)}</p>` : ""}
-                ${docBlock(x.a, "qa:" + i, "answer")}
-              </div>`).join("")
-              : `<span class="muted">None added</span>`,
-              { right: qs.length ? `<span class="sec-count">${qs.length}</span>` : "" })}
+            ${sec("Job description", 2, `<div class="rich jd" id="jd-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Job description"
+              data-placeholder="Click here and paste the job description. Bullets and formatting are kept."></div><span class="muted small" id="jd-status"></span>`)}
+            ${sec("Notes", 3, `<textarea id="notes-text" class="inline-doc autogrow" rows="3" placeholder="Click here to add notes">${esc(a.notes)}</textarea><span class="muted small" id="notes-status"></span>`)}
+            ${sec("Cover letter", 5, `<div class="doc-wrap"><textarea id="cover-text" class="inline-doc autogrow" rows="4" placeholder="Click here to write or paste your cover letter">${esc(a.cover_letter)}</textarea>
+              <button class="icon-btn doc-copy" type="button" data-copy-el="#cover-text" title="Copy cover letter" aria-label="Copy cover letter">${I.copy()}</button></div>
+              <div class="doc-actions"><button class="btn" type="button" id="cover-attach">${I.paperclip(15)} Attach a file</button><span class="muted small" id="cover-status"></span></div>
+              <div id="cover-files"></div><input type="file" id="cover-file" hidden>`)}
+            ${sec("Questions", 6, `<div id="qa-box">${qs.map(qaRow).join("")}</div>
+              <div class="doc-actions"><button type="button" class="btn" id="add-qa-inline">${I.plus(15)} Add question</button></div>`,
+              { right: `<span class="sec-count" id="qa-count">${qs.length || ""}</span>` })}
             ${sec("Outreach", 8, `<div id="out-box"></div>`)}
             ${sec("Correspondence", 9, `<div id="mail-box"><span class="muted">Loading…</span></div>`, { right: `<span class="sec-count" id="mail-count"></span>` })}
           </div>
           <div class="app-aside">
-            ${sec("Overview", 1, `<div class="facts">
-              ${fact("Stage", esc(st.label) + (stSub ? `<small>${esc(stSub)}</small>` : ""), st.key === "ghosted" ? "warn" : "")}
-              ${fact("Applied", a.date_applied ? esc(fmtDate(a.date_applied)) + (a.status === "completed" ? `<small>${daysSince(a.date_applied)} days ago</small>` : "") : "")}
-              ${fact("Location", esc(a.location))}
-              ${fact("Job posting", job ? `<a href="${esc(job)}" target="_blank" rel="noopener">Open posting ↗</a>` : "")}
-            </div>`, { cls: "overview" })}
-            ${a.status === "completed" ? "" : sec("Status", 2, `<div class="doc-actions" role="group" aria-label="Status">
-              ${[["to_start", "To Start"], ["in_progress", "In progress"]].map(([v, l]) => `<button type="button" class="btn${(a.status || "to_start") === v ? " primary" : ""}" data-set-status="${v}" aria-pressed="${(a.status || "to_start") === v}">${l}</button>`).join("")}</div>
-              <span class="muted small">Entering a date applied in the edit form marks it Applied.</span>`)}
-            ${sec("Resume", 4, resumeBody)}
+            ${sec("Overview", 1, `<div id="ov-box">${overviewHtml()}</div>`, { cls: "overview" })}
+            ${sec("Resume", 4, `<div id="resume-box"></div>`)}
             ${sec("Interview prep", 7, `<div id="prep-box"><span class="muted">Loading…</span></div><input type="file" id="prep-file" hidden>`)}
             ${sec("Interviews", 9, `<div id="iv-box">${interviewsHtml()}</div>`)}
             ${sec("Timeline", 10, `<div id="tl-box">${timelineHtml()}</div>`)}
           </div>
         </div>
       </div>`;
+
+    // ---- Overview: stage and dates, job posting ----
+    const ovBox = $("#ov-box", el);
+    const paintOverview = () => { ovBox.innerHTML = overviewHtml(); };
+    const afterStage = () => {
+      interviews = interviewsOf(a);
+      paintOverview();
+      $("#tl-box", el).innerHTML = timelineHtml();
+      renderPage();
+    };
+    const setStage = async (patch) => {
+      const later = ["rejection_date", "offer_date", "offer_rejected_date"];
+      const goingBack = (patch.status && patch.status !== "completed") || ("date_applied" in patch && !patch.date_applied);
+      if (goingBack) {
+        if ((a.date_applied || later.some((k) => a[k])) && !(await confirmBox("Moving this back clears the date applied, offer and rejection dates.", "Clear dates"))) { paintOverview(); return; }
+        patch = { status: patch.status || "to_start", date_applied: null, ...Object.fromEntries(later.filter((k) => k in a).map((k) => [k, null])) };
+      } else {
+        patch = { ...patch, status: "completed" };
+        if (!a.date_applied && !patch.date_applied) patch.date_applied = todayISO();
+      }
+      await saveApp(patch, el);
+      afterStage();
+    };
+    ovBox.addEventListener("click", (e) => {
+      const t = e.target.closest("button");
+      if (!t) return;
+      if ("stageToggle" in t.dataset) { stageOpen = !stageOpen; paintOverview(); }
+      else if (t.dataset.stage) setStage({ status: t.dataset.stage });
+      else if ("urlToggle" in t.dataset) { urlEdit = !urlEdit; paintOverview(); if (urlEdit) $("#url-input", ovBox).focus(); }
+    });
+    ovBox.addEventListener("change", async (e) => {
+      const inp = e.target;
+      if (inp.closest("#stage-form") && inp.type === "date") setStage({ [inp.name]: inp.value || null });
+      else if (inp.id === "url-input") {
+        const v = inp.value.trim();
+        await saveApp({ job_url: v ? safeUrl(v) || v : null }, null);
+        urlEdit = false;
+        paintOverview();
+      }
+    });
+    ovBox.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.id === "url-input") e.target.blur(); });
+
+    // ---- Job description: formatted text; pasting keeps bullets, numbering, bold and links ----
+    const jd = $("#jd-editor", el);
+    jd.innerHTML = descHtml(a.job_description);
+    jd.addEventListener("paste", (e) => {
+      const cd = e.clipboardData;
+      if (!cd) return;
+      e.preventDefault();
+      const html = cd.getData("text/html");
+      document.execCommand("insertHTML", false, html ? cleanHtml(html) : textToHtml(cd.getData("text/plain")));
+    });
+    jd.addEventListener("blur", async () => {
+      const html = cleanHtml(jd.innerHTML);
+      const value = html.replace(/<[^>]*>/g, "").trim() ? html : null;
+      if ((value || "") === (a.job_description ? descHtml(a.job_description) : "")) return;
+      await saveApp({ job_description: value }, null);
+      jd.innerHTML = value || "";
+      savedFlag("#jd-status");
+    });
+
+    // ---- Notes and cover letter: click in and type; saves when you click away ----
+    const autoSave = (ta, key, statusSel) => {
+      growTa(ta);
+      ta.addEventListener("blur", async () => {
+        const v = ta.value.trim();
+        if (v === (a[key] || "").trim()) return;
+        await saveApp({ [key]: v || null }, null);
+        savedFlag(statusSel);
+      });
+    };
+    autoSave($("#notes-text", el), "notes", "#notes-status");
+    autoSave($("#cover-text", el), "cover_letter", "#cover-status");
+    $$("[data-copy-el]", el).forEach((b) => wireCopy(b, () => $(b.dataset.copyEl, el).value));
+
+    // ---- Resume: pick one in place, attach a file, remove it ----
+    const resumeBox = $("#resume-box", el);
+    let resumeMenu = false;
+    const resumeFull = () => (a.resume_tailored ? "Tailored for this job" : a.resume_track ? trackLabel(a.resume_track) + " resume" : "");
+    const paintResume = () => {
+      const cur = resumeChoice(a);
+      resumeBox.innerHTML = `<div class="pick-wrap">
+          <button type="button" class="pick-btn" data-resume-toggle aria-haspopup="listbox" aria-expanded="${resumeMenu}">${cur ? esc(resumeFull()) : `<span class="muted">Choose a resume</span>`}${I.chevron(14)}</button>
+          <button type="button" class="icon-btn attach-btn" data-resume-attach aria-label="Attach a resume file" title="Attach a resume file">${I.paperclip(16)}</button>
+          ${resumeMenu ? `<div class="pick-menu" role="listbox">${RESUME_CHOICES.map(([v, l]) =>
+            `<button type="button" role="option" class="pick-opt${cur === v ? " on" : ""}" data-resume-pick="${v}" aria-selected="${cur === v}">${esc(v === "tailored" ? l : l + " resume")}</button>`).join("")}
+            ${cur ? `<button type="button" class="pick-opt" data-resume-pick="">Clear choice</button>` : ""}</div>` : ""}
+        </div>
+        ${a.resume_file_path ? `<div class="file-row">${I.download(15)}<span class="file-name">${esc(a.resume_file_name || "Resume file")}</span>
+          <button class="btn" type="button" data-resume-open>Open</button>
+          <button class="icon-btn" type="button" data-resume-del aria-label="Remove file" title="Remove file">${I.close(14)}</button></div>` : ""}
+        <input type="file" data-resume-file hidden accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">`;
+    };
+    paintResume();
+    resumeBox.addEventListener("click", async (e) => {
+      const t = e.target.closest("button");
+      if (!t) return;
+      const d = t.dataset;
+      if ("resumeToggle" in d) { resumeMenu = !resumeMenu; paintResume(); }
+      else if ("resumePick" in d) {
+        const v = d.resumePick;
+        resumeMenu = false;
+        await saveApp({ resume_tailored: v === "tailored", resume_track: v && v !== "tailored" ? v : null }, null);
+        paintResume();
+        renderPage();
+      } else if ("resumeAttach" in d) $("[data-resume-file]", resumeBox).click();
+      else if ("resumeOpen" in d) openFile(a.resume_file_path);
+      else if ("resumeDel" in d) {
+        if (!(await confirmBox(`Remove ${a.resume_file_name || "the resume file"}?`, "Remove"))) return;
+        const path = a.resume_file_path;
+        try { await run(() => backend.removeFile(path), el); } catch (err) { return; }
+        await saveApp({ resume_file_path: null, resume_file_name: null }, null);
+        paintResume();
+      }
+    });
+    resumeBox.addEventListener("change", async (e) => {
+      const input = e.target.closest("[data-resume-file]");
+      const file = input && input.files[0];
+      if (!file) return;
+      const old = a.resume_file_path;
+      let path;
+      try { path = await run(() => backend.uploadFile(a.id, file), el); } catch (err) { return; }
+      await saveApp({ resume_file_path: path, resume_file_name: file.name, resume_tailored: true, resume_track: null }, null);
+      if (old) backend.removeFile(old).catch(() => {});
+      paintResume();
+      renderPage();
+    });
+    const closeResumeMenu = (e) => {
+      if (!resumeBox.isConnected) { document.removeEventListener("click", closeResumeMenu); return; }
+      if (resumeMenu && !e.target.closest(".pick-wrap")) { resumeMenu = false; paintResume(); }
+    };
+    document.addEventListener("click", closeResumeMenu);
+
+    // ---- Cover letter files ----
+    const coverBox = $("#cover-files", el), coverInput = $("#cover-file", el);
+    let coverFiles = [];
+    const paintCover = () => {
+      coverBox.innerHTML = coverFiles.map((f, i) => `<div class="file-row">${I.download(15)}<span class="file-name">${esc(f.name)}</span>
+        <button class="btn" type="button" data-cf-open="${i}">Open</button>
+        <button class="icon-btn" type="button" data-cf-del="${i}" aria-label="Remove file" title="Remove file">${I.close(14)}</button></div>`).join("");
+    };
+    const loadCover = async () => {
+      try { coverFiles = await backend.listFiles(a.id, "cover"); } catch (err) { coverFiles = []; }
+      if (coverBox.isConnected) paintCover();
+    };
+    $("#cover-attach", el).addEventListener("click", () => coverInput.click());
+    coverInput.addEventListener("change", async () => {
+      const file = coverInput.files[0];
+      if (!file) return;
+      try { await run(() => backend.uploadFile(a.id, file, "cover"), el); } catch (err) { /* shown */ }
+      coverInput.value = "";
+      loadCover();
+    });
+    coverBox.addEventListener("click", async (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if (b.dataset.cfOpen) openFile(coverFiles[Number(b.dataset.cfOpen)].path);
+      else if (b.dataset.cfDel) {
+        const f = coverFiles[Number(b.dataset.cfDel)];
+        if (!(await confirmBox(`Remove ${f.name}?`, "Remove"))) return;
+        try { await run(() => backend.removeFile(f.path), el); } catch (err) { return; }
+        loadCover();
+      }
+    });
+    loadCover();
+
+    // ---- Questions: click in and edit; saves when you click away ----
+    const qaBox = $("#qa-box", el);
+    const readQs = () => $$(".qa-inline", qaBox).map((r) => ({ q: $(".qa-q", r).value.trim(), a: $(".qa-a", r).value.trim() })).filter((x) => x.q || x.a);
+    const saveQs = async () => {
+      const pairs = readQs();
+      const before = questionsOf(a).map((x) => ({ q: (x.q || "").trim(), a: (x.a || "").trim() })).filter((x) => x.q || x.a);
+      if (JSON.stringify(pairs) === JSON.stringify(before)) return;
+      await saveApp({ questions: pairs, application_answers: null }, null);
+      $("#qa-count", el).textContent = pairs.length || "";
+    };
+    const bindQa = (row) => { growTa($(".qa-a", row)); wireCopy($("[data-qa-copy]", row), () => $(".qa-a", row).value); };
+    $$(".qa-inline", qaBox).forEach(bindQa);
+    qaBox.addEventListener("change", saveQs);
+    qaBox.addEventListener("click", async (e) => {
+      const del = e.target.closest("[data-qa-del]");
+      if (!del) return;
+      const row = del.closest(".qa-inline");
+      if (($(".qa-q", row).value || $(".qa-a", row).value) && !(await confirmBox("Remove this question and answer?", "Remove"))) return;
+      row.remove();
+      saveQs();
+    });
+    $("#add-qa-inline", el).addEventListener("click", () => {
+      qaBox.insertAdjacentHTML("beforeend", qaRow());
+      const row = qaBox.lastElementChild;
+      bindQa(row);
+      $(".qa-q", row).focus();
+    });
+
     const ivBox = $("#iv-box", el);
     const paintIv = () => {
       ivBox.innerHTML = interviewsHtml();
@@ -1446,7 +1727,7 @@
           </form>`;
         return `<div class="out-actions">${c
           ? `<a href="#/contact/${esc(c.id)}">View contact</a><button type="button" class="linkbtn" data-out-hist="${esc(o.id)}">Log activity</button>${state.outreachLogged === o.id ? `<span class="muted small">Logged ✓</span>` : ""}`
-          : `<span class="muted small">Not in Contacts</span><button type="button" class="linkbtn" data-out-edit="${esc(o.id)}">Link to a contact</button><button type="button" class="linkbtn" data-out-save="${esc(o.id)}">Save to Contacts</button>`}</div>`;
+          : `<span class="muted small">Not in Contacts</span><button type="button" class="linkbtn" data-out-link="${esc(o.id)}">Link to a contact</button><button type="button" class="linkbtn" data-out-save="${esc(o.id)}">Save to Contacts</button>`}</div>`;
       };
       const groupHtml = (g, gi) => {
         const list = outreachOf(a.id, g.id);
@@ -1459,12 +1740,16 @@
             ${iconBtn(`data-out-gmove="${esc(g.id)}:1"${gi === groups.length - 1 ? " disabled" : ""}`, "Move group down", I.chevron(14))}
             ${iconBtn(`data-out-gdelete="${esc(g.id)}"`, "Delete group", I.trash(14))}</span></div>`}
           ${list.length || adding ? `<ul class="out-list">${list.map((o, i) => ed && ed.type === "entry" && ed.id === o.id ? `<li class="editing">${entryForm(o, g.id)}</li>` : `
-            <li><div class="out-main" role="button" tabindex="0" data-out-edit="${esc(o.id)}" title="Click to edit">
-                <span class="out-line"><b>${esc(o.name)}</b>${o.contact_id && state.contacts.some((c) => c.id === o.contact_id) ? ` <a class="out-open" href="#/contact/${esc(o.contact_id)}" title="Open ${esc(o.name)} in Contacts" aria-label="Open ${esc(o.name)} in Contacts">↗</a>` : ""}${o.title_company ? ` (${esc(o.title_company)})` : ""}${o.update_text ? ` — ${esc(o.update_text)}` : ""}</span>
+            <li class="out-row" data-out-row="${esc(o.id)}" data-cid="${esc(o.contact_id || "")}"><div class="out-main">
+                <div class="out-top"><input class="inline-input out-name" type="text" aria-label="Name" placeholder="Name" value="${esc(o.name)}">
+                  <span class="out-link">${o.contact_id && state.contacts.some((c) => c.id === o.contact_id) ? `<a class="out-open" href="#/contact/${esc(o.contact_id)}" title="Open ${esc(o.name)} in Contacts" aria-label="Open ${esc(o.name)} in Contacts">↗</a>` : ""}</span>
+                  <input class="inline-input out-title" type="text" aria-label="Title / company" placeholder="Title / company" value="${esc(o.title_company)}"></div>
+                <textarea class="inline-doc out-update autogrow" rows="1" aria-label="Update" placeholder="Add an update, e.g. emailed 5/5">${esc(o.update_text)}</textarea>
                 <span class="out-date">${outLast(o)}</span></div>
               <div class="out-move">
                 ${iconBtn(`data-out-move="${esc(o.id)}:-1"${i === 0 ? " disabled" : ""}`, "Move up", I.chevron(14), "out-up")}
-                ${iconBtn(`data-out-move="${esc(o.id)}:1"${i === list.length - 1 ? " disabled" : ""}`, "Move down", I.chevron(14))}</div>
+                ${iconBtn(`data-out-move="${esc(o.id)}:1"${i === list.length - 1 ? " disabled" : ""}`, "Move down", I.chevron(14))}
+                ${iconBtn(`data-out-delete="${esc(o.id)}"`, "Delete this person", I.trash(14))}</div>
               ${outActions(o)}</li>`).join("")}
             ${adding ? `<li class="editing">${entryForm(null, g.id, ed.prefill, ed.contactId)}</li>` : ""}</ul>` : `<span class="muted">Nothing logged yet</span>`}
           ${adding ? "" : `<div><button type="button" class="btn ghost" data-out-add="${esc(g.id)}">+ Add</button></div>`}</div>`;
@@ -1475,6 +1760,36 @@
           : `<div class="doc-actions"><button type="button" class="btn ghost" data-out-gadd>+ Add group</button></div>`)
         + (a.company && peopleAt(a).length ? `<div class="doc-actions out-people-row"><button class="btn" type="button" id="out-people">People you know at ${esc(a.company)}</button></div>` : "");
       $$("textarea.autogrow", outBox).forEach(autogrowTa);
+      // Each person is edited right in the row: change a box, click away, and it saves.
+      $$(".out-row", outBox).forEach((li) => {
+        const o = state.outreach.find((x) => x.id === li.dataset.outRow);
+        if (!o) return;
+        const name = $(".out-name", li), title = $(".out-title", li), upd = $(".out-update", li);
+        const save = async () => {
+          const n = name.value.trim();
+          if (!n) { name.value = o.name; return; }
+          const cid = li.dataset.cid || (contactByName(n) || {}).id || null; // picked from the suggestions, or typed exactly
+          const patch = { name: n, title_company: title.value.trim(), update_text: upd.value.trim(), contact_id: cid };
+          if (patch.name === o.name && patch.title_company === (o.title_company || "") && patch.update_text === (o.update_text || "") && cid === (o.contact_id || null)) return;
+          const saved = await run(() => backend.saveOutreach({ id: o.id, ...patch }));
+          Object.assign(o, saved);
+          li.dataset.cid = o.contact_id || "";
+          // Refresh the link and actions in place, so a box you tabbed into keeps focus.
+          const c = o.contact_id && state.contacts.find((x) => x.id === o.contact_id);
+          $(".out-link", li).innerHTML = c ? `<a class="out-open" href="#/contact/${esc(c.id)}" title="Open ${esc(o.name)} in Contacts" aria-label="Open ${esc(o.name)} in Contacts">↗</a>` : "";
+          const act = $(".out-actions", li);
+          if (act) act.outerHTML = outActions(o);
+          $(".out-date", li).innerHTML = outLast(o);
+        };
+        [name, title, upd].forEach((x) => x.addEventListener("change", save));
+        if (li.dataset.cid) name.dataset.contactId = li.dataset.cid;
+        attachNamePicker(name, { addOption: false, onChange: (c) => {
+          if (!c) { li.dataset.cid = ""; return; }
+          li.dataset.cid = c.id;
+          if (!title.value.trim()) title.value = [c.job_title, c.company].filter(Boolean).join(", ");
+          save();
+        } });
+      });
       // Name suggestions from Contacts: picking one links the entry and fills in their title / company.
       $$('[data-out-form="entry"] input[name="name"]', outBox).forEach((inp) => {
         const f = inp.form;
@@ -1564,12 +1879,16 @@
       else if (d.outAdd) editOutreach({ type: "entry", id: null, group: d.outAdd });
       else if (d.outHist) editOutreach({ type: "history", id: d.outHist });
       else if (d.outSave) saveToContacts(state.outreach.find((x) => x.id === d.outSave));
+      else if (d.outLink) {
+        const inp = $(`[data-out-row="${d.outLink}"] .out-name`, outBox);
+        if (inp) { inp.focus(); inp.select(); }
+      }
       else if (d.outEdit) editOutreach({ type: "entry", id: d.outEdit, group: state.outreach.find((x) => x.id === d.outEdit).group_id });
       else if ("outCancel" in d) editOutreach(null);
       else if (d.outDelete) {
         const o = state.outreach.find((x) => x.id === d.outDelete);
         if (!(await confirmBox(`Delete ${o.name} from this outreach log?`))) return;
-        await run(() => backend.deleteOutreach(o.id), t.closest("form"));
+        await run(() => backend.deleteOutreach(o.id), t.closest("form") || outBox);
         state.outreach = state.outreach.filter((x) => x.id !== o.id);
         editOutreach(null);
       } else if (d.outMove) {
@@ -1820,10 +2139,6 @@
             <div id="iv-list"></div>
             <div><button type="button" class="btn" id="add-iv">${I.plus(15)} Add interview</button></div>
             <div id="iv-mails"></div></div>
-        </section>
-        <section class="section"><h3>Job description</h3>
-          <div class="field"><label for="a-job_description" class="sr-only">Job description</label>
-            <textarea id="a-job_description" name="job_description" class="autogrow" rows="6" placeholder="Paste the job description. Postings can disappear.">${esc(a.job_description)}</textarea></div>
         </section>
         <section class="section"><h3>Notes</h3>
           <div class="field"><label for="a-notes" class="sr-only">Notes</label><textarea id="a-notes" name="notes">${esc(a.notes)}</textarea></div>
