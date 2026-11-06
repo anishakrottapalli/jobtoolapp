@@ -2325,10 +2325,15 @@
       sort: (a, b) => a.title.localeCompare(b.title),
       fields: [
         { name: "title", label: "Title", required: true, placeholder: "e.g. Cold intro to alum" },
-        { name: "body", label: "Message", type: "textarea", required: true, placeholder: "Hi [Name], ..." },
+        { name: "link", label: "Link (optional)", type: "url", placeholder: "https://… an article or example worth keeping" },
+        { name: "body", label: "Message (optional)", type: "textarea", placeholder: "Hi [Name], ..." },
       ],
-      render: (d) => `<b>${esc(d.title)}</b><span class="item-text">${esc(d.body)}</span>`,
-      copy: (d) => d.body,
+      render: (d) => {
+        const url = safeUrl(d.link);
+        return `<b>${esc(d.title)}</b>${url ? `<span class="item-sub"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(hostOf(url))} ↗</a></span>` : ""}
+          ${d.body ? `<span class="item-text">${esc(d.body)}</span>` : ""}`;
+      },
+      copy: (d) => d.body || d.link || "",
     });
     mountFiles($("#rs-prep", page), "resources", "files", "No interview prep files yet. Upload a PDF or a markdown file.", ".pdf,.doc,.docx,.md,.markdown,application/pdf,text/markdown");
   }
