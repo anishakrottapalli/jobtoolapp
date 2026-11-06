@@ -3,9 +3,8 @@
 
 (function () {
   const METHODS = ["Email", "LinkedIn", "Phone call", "Text", "In person", "Other"];
-  // Emails are logged by the Gmail sync, so the manual "How" menus leave Email out.
-  const MANUAL_METHODS = ["In person", "LinkedIn", "Phone call", "Text", "Other"];
-  const EMAIL_HINT = `<span class="muted small">Emails are logged automatically by Gmail sync.</span>`;
+  const MANUAL_METHODS = ["Email", "In person", "LinkedIn", "Phone call", "Text", "Other"];
+  const EMAIL_HINT = `<span class="muted small">Emails in your Networking and Jobs folders are also added automatically.</span>`;
   const EMAIL_STATUSES = [["unchecked", "Not checked"], ["verified", "Verified"], ["bounced", "Bounced"]];
   const LI_STATUSES = [["none", "Not connected"], ["following", "Following"], ["requested", "Request sent"], ["connected", "Connected"]];
   // History entry (kind "linkedin") logged when the status changes; stored in the method column.
@@ -390,7 +389,12 @@
 
   const statusLabel = (s) => (EMAIL_STATUSES.find(([v]) => v === s) || [, ""])[1];
   const liLabel = (s) => (LI_STATUSES.find(([v]) => v === s) || LI_STATUSES[0])[1];
-  const kindLabel = { outreach: "Outreach", reply: "Reply", linkedin: "LinkedIn" };
+  const kindLabel = { outreach: "Outreach", reply: "Reply", linkedin: "LinkedIn", meeting: "Interview" };
+  // " · Business Analyst at Acme" (linked) when a history entry is about a job
+  const jobLink = (i) => {
+    const ap = i.application_id && state.applications.find((x) => x.id === i.application_id);
+    return ap ? ` · <a href="#/application/${esc(ap.id)}">${esc(ap.position_title)}${ap.company ? " at " + esc(ap.company) : ""}</a>` : "";
+  };
   const everyone = () => state.contacts.map((c) => ({ c, s: summary(c) }));
 
   function exportContacts(list) {
@@ -1156,6 +1160,30 @@
       .filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
   }
 
+  // Interviews with someone in Contacts are also noted in that person's history (kind "meeting").
+  async function syncInterviewHistory(app) {
+    const rows = interviewsOf(app).map((iv, n) => ({ ...iv, n: n + 1 })).filter((iv) => iv.contact_id);
+    const have = state.interactions.filter((i) => i.application_id === app.id && i.kind === "meeting");
+    const keep = new Set();
+    for (const iv of rows) {
+      const note = `Interview #${iv.n}`;
+      const hit = have.find((i) => !keep.has(i.id) && i.contact_id === iv.contact_id && i.happened_on === iv.date);
+      if (hit) {
+        keep.add(hit.id);
+        if (hit.note !== note) Object.assign(hit, await backend.updateInteraction({ ...hit, note }));
+        continue;
+      }
+      const saved = await backend.addInteraction({ contact_id: iv.contact_id, application_id: app.id, kind: "meeting", method: "Interview", happened_on: iv.date, note });
+      state.interactions.push(saved);
+      keep.add(saved.id);
+    }
+    for (const i of have) {
+      if (keep.has(i.id)) continue;
+      await backend.deleteInteraction(i.id);
+      state.interactions = state.interactions.filter((x) => x.id !== i.id);
+    }
+  }
+
   function renderAppView(el, a) {
     const st = stageOf(a);
     const flash = takeFlash();
@@ -1164,9 +1192,9 @@
     let interviews = interviewsOf(a);
     const baseEvents = () => {
       const ev = [];
-      if (a.status === "completed" && a.date_applied) ev.push({ date: a.date_applied, text: "Applied", kind: "outreach" });
-      interviews.forEach((iv, i) => ev.push({ date: iv.date, text: `Interview #${i + 1}`, sub: iv.with ? "with " + iv.with : "", kind: "reply" }));
-      if (a.rejection_date) ev.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin" });
+      if (a.status === "completed" && a.date_applied) ev.push({ date: a.date_applied, text: "Applied", kind: "outreach", type: "status" });
+      interviews.forEach((iv, i) => ev.push({ date: iv.date, text: `Interview #${i + 1}`, sub: iv.with ? "with " + iv.with : "", kind: "reply", type: "iv" }));
+      if (a.rejection_date) ev.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin", type: "status" });
       return ev;
     };
     let mailEvents = [];
@@ -1186,12 +1214,16 @@
         : `<span class="muted">No interviews yet.</span>`)
         + `<div class="doc-actions"><button type="button" class="btn" data-iv-edit>${interviews.length ? I.pencil(14) + " Edit interviews" : I.plus(15) + " Add interview"}</button></div>`;
     let tlOpen = false; // the timeline gets long, so it stays collapsed until asked for
+    let tlFilter = "all";
     const timelineHtml = () => {
-      const events = [...baseEvents(), ...mailEvents].sort((x, y) => y.date.localeCompare(x.date));
-      if (!events.length) return `<span class="muted">Nothing yet.</span>`;
-      const toggle = `<button type="button" class="btn${tlOpen ? " ghost" : ""}" data-tl-toggle aria-expanded="${tlOpen}">${tlOpen ? "Hide timeline" : `View timeline (${events.length})`}</button>`;
+      const all = [...baseEvents(), ...mailEvents].sort((x, y) => y.date.localeCompare(x.date));
+      const events = tlOpen && tlFilter !== "all" ? all.filter((e) => e.type === tlFilter) : all;
+      if (!all.length) return `<span class="muted">Nothing yet.</span>`;
+      const toggle = `<button type="button" class="btn${tlOpen ? " ghost" : ""}" data-tl-toggle aria-expanded="${tlOpen}">${tlOpen ? "Hide timeline" : `View timeline (${all.length})`}</button>`;
       if (!tlOpen) return `<span class="muted small">Latest: ${esc(events[0].text)}, ${esc(fmtDate(events[0].date))}</span><div class="doc-actions">${toggle}</div>`;
-      return `<div class="timeline">${events.map((e) => `
+      const chips = `<div class="filters" role="group" aria-label="Filter the timeline">${[["all", "All"], ["corr", "Correspondence"], ["iv", "Interviews"], ["status", "Applied / rejected"]]
+        .map(([v, l]) => `<button type="button" class="chip${tlFilter === v ? " on" : ""}" data-tl-filter="${v}" aria-pressed="${tlFilter === v}">${l}</button>`).join("")}</div>`;
+      return chips + (events.length ? "" : `<span class="muted">Nothing of that kind.</span>`) + `<div class="timeline">${events.map((e) => `
                 <div class="tl-item">
                   <span class="tl-dot ${e.kind}"></span>
                   <div class="what"><b>${esc(e.text)}</b>${e.sub ? `<span>${esc(e.sub)}</span>` : ""}<span>${esc(fmtDate(e.date))}</span></div>
@@ -1288,6 +1320,7 @@
         const saved = await run(() => backend.saveApplication({ ...a, interviews: rows, interview_dates: rows.map((x) => x.date) }), el);
         Object.assign(a, saved);
         interviews = interviewsOf(a);
+        try { await syncInterviewHistory(a); } catch (err) { /* needs migration 018 */ }
         ivEdit = false;
         $("#tl-box", el).innerHTML = timelineHtml();
         if (toAdd.length) return ivDraft(a, toAdd);
@@ -1295,6 +1328,8 @@
       paintIv();
     });
     $("#tl-box", el).addEventListener("click", (e) => {
+      const chip = e.target.closest("[data-tl-filter]");
+      if (chip) { tlFilter = chip.dataset.tlFilter; $("#tl-box", el).innerHTML = timelineHtml(); return; }
       if (!e.target.closest("[data-tl-toggle]")) return;
       tlOpen = !tlOpen;
       $("#tl-box", el).innerHTML = timelineHtml();
@@ -1371,6 +1406,13 @@
       ta.addEventListener("input", fit);
       fit();
     };
+    // Newest thing logged with this person about this job (their history entry and this job's correspondence are one record).
+    const outLast = (o) => {
+      const last = o.contact_id && state.interactions.filter((i) => i.contact_id === o.contact_id && i.application_id === a.id && (i.kind === "outreach" || i.kind === "reply"))
+        .sort((x, y) => y.happened_on.localeCompare(x.happened_on))[0];
+      return last ? `${last.kind === "outreach" ? "You reached out" : "They replied"} · ${esc(last.method)} · ${esc(fmtDate(last.happened_on))}`
+        : `Updated ${esc(fmtDate((o.updated_at || o.created_at || "").slice(0, 10)))}`;
+    };
     const renderOutreach = () => {
       const ed = state.outreachEdit && state.outreachEdit.appId === a.id ? state.outreachEdit : null;
       const groups = groupsOf(a.id);
@@ -1381,7 +1423,6 @@
           <div class="field wide"><label>Title / Company (optional)</label><input name="title_company" value="${esc(o ? o.title_company : prefill ? prefill.title_company : "")}"></div>
           <div class="field wide"><label>Update</label><textarea name="update_text" class="autogrow" rows="2" placeholder="e.g. email sent 5/5; LinkedIn connected; replied">${esc(o ? o.update_text : "")}</textarea></div>
           <div class="field wide"><label>Group</label><select name="group_id">${options(groups.map((g) => [g.id, g.name]), groupId)}</select></div>
-          ${o || contactId ? "" : `<label class="field choice"><input type="checkbox" name="to_contacts"> Also add to my Contacts</label>`}
           <div class="btns">${o ? `<button type="button" class="btn ghost danger-text" data-out-delete="${esc(o.id)}">Delete</button><span class="grow"></span>` : ""}
             <button type="button" class="btn ghost" data-out-cancel>Cancel</button><button class="btn primary" type="submit">Save</button></div>
         </form>`;
@@ -1396,15 +1437,15 @@
         const c = o.contact_id && state.contacts.find((x) => x.id === o.contact_id);
         if (c && ed && ed.type === "history" && ed.id === o.id) return `
           <form class="log-form out-hform" data-out-form="history">
-            <div class="field wide"><label>Log to ${esc(fullName(c))}'s history</label>
+            <div class="field wide"><label>Log with ${esc(fullName(c))}: shows in this job's Correspondence and in their history</label>
               <select name="kind">${options([["outreach", "I reached out"], ["reply", "They replied"]])}</select></div>
             <div class="field"><label>Date</label><input name="happened_on" type="date" required value="${todayISO()}" max="${todayISO()}"></div>
             <div class="field"><label>How</label><select name="method">${options(MANUAL_METHODS)}</select>${EMAIL_HINT}</div>
-            <div class="field wide"><label>Note (optional)</label><input name="note" value="${esc(`Re: ${a.position_title}${a.company ? " at " + a.company : ""}`)}"></div>
-            <div class="btns"><button type="button" class="btn ghost" data-out-cancel>Cancel</button><button class="btn primary" type="submit">Add to history</button></div>
+            <div class="field wide"><label>Note (optional)</label><input name="note" placeholder="e.g. Sent my resume"></div>
+            <div class="btns"><button type="button" class="btn ghost" data-out-cancel>Cancel</button><button class="btn primary" type="submit">Save</button></div>
           </form>`;
         return `<div class="out-actions">${c
-          ? `<a href="#/contact/${esc(c.id)}">View contact</a><button type="button" class="linkbtn" data-out-hist="${esc(o.id)}">Log to contact history</button>${state.outreachLogged === o.id ? `<span class="muted small">Logged ✓</span>` : ""}`
+          ? `<a href="#/contact/${esc(c.id)}">View contact</a><button type="button" class="linkbtn" data-out-hist="${esc(o.id)}">Log activity</button>${state.outreachLogged === o.id ? `<span class="muted small">Logged ✓</span>` : ""}`
           : `<span class="muted small">Not in Contacts</span><button type="button" class="linkbtn" data-out-edit="${esc(o.id)}">Link to a contact</button><button type="button" class="linkbtn" data-out-save="${esc(o.id)}">Save to Contacts</button>`}</div>`;
       };
       const groupHtml = (g, gi) => {
@@ -1420,7 +1461,7 @@
           ${list.length || adding ? `<ul class="out-list">${list.map((o, i) => ed && ed.type === "entry" && ed.id === o.id ? `<li class="editing">${entryForm(o, g.id)}</li>` : `
             <li><div class="out-main" role="button" tabindex="0" data-out-edit="${esc(o.id)}" title="Click to edit">
                 <span class="out-line"><b>${esc(o.name)}</b>${o.contact_id && state.contacts.some((c) => c.id === o.contact_id) ? ` <a class="out-open" href="#/contact/${esc(o.contact_id)}" title="Open ${esc(o.name)} in Contacts" aria-label="Open ${esc(o.name)} in Contacts">↗</a>` : ""}${o.title_company ? ` (${esc(o.title_company)})` : ""}${o.update_text ? ` — ${esc(o.update_text)}` : ""}</span>
-                <span class="out-date">Updated ${esc(fmtDate((o.updated_at || o.created_at || "").slice(0, 10)))}</span></div>
+                <span class="out-date">${outLast(o)}</span></div>
               <div class="out-move">
                 ${iconBtn(`data-out-move="${esc(o.id)}:-1"${i === 0 ? " disabled" : ""}`, "Move up", I.chevron(14), "out-up")}
                 ${iconBtn(`data-out-move="${esc(o.id)}:1"${i === list.length - 1 ? " disabled" : ""}`, "Move down", I.chevron(14))}</div>
@@ -1438,10 +1479,9 @@
       $$('[data-out-form="entry"] input[name="name"]', outBox).forEach((inp) => {
         const f = inp.form;
         if (f.contact_id.value) inp.dataset.contactId = f.contact_id.value;
-        attachNamePicker(inp, { addOption: false, onChange: (c) => {
+        attachNamePicker(inp, { onChange: (c) => {
           f.contact_id.value = c ? c.id : "";
           if (c && !f.title_company.value.trim()) f.title_company.value = [c.job_title, c.company].filter(Boolean).join(", ");
-          if (f.to_contacts) { f.to_contacts.disabled = !!c; if (c) f.to_contacts.checked = false; }
         } });
       });
       const first = $("[data-out-form] input", outBox);
@@ -1571,10 +1611,11 @@
       }
       if (f.dataset.outForm === "history") {
         const o = state.outreach.find((x) => x.id === ed.id);
-        const entry = { contact_id: o.contact_id, kind: f.kind.value, happened_on: f.happened_on.value, method: f.method.value, note: f.note.value.trim() };
+        const entry = { contact_id: o.contact_id, application_id: a.id, kind: f.kind.value, happened_on: f.happened_on.value, method: f.method.value, note: f.note.value.trim() };
         state.interactions.push(await run(() => backend.addInteraction(entry), f));
         state.outreachLogged = o.id;
         editOutreach(null);
+        paintCorr(); // the same entry now shows under Correspondence and in the Timeline
         return;
       }
       const existing = ed.id ? state.outreach.find((x) => x.id === ed.id) : null;
@@ -1586,10 +1627,11 @@
       const linked = f.contact_id.value || (contactByName(row.name) || {}).id || null; // picked from the suggestions, or typed exactly
       if (existing) row.contact_id = linked; else if (linked) row.contact_id = linked;
       if (!existing || existing.group_id !== groupId) row.sort_order = nextOrder(outreachOf(a.id, groupId));
+      const addToContacts = !linked && !!f.name.dataset.addContact; // chosen from the name dropdown
       const saved = await run(() => backend.saveOutreach(row), f);
       if (existing) Object.assign(existing, saved); else state.outreach.push(saved);
       editOutreach(null);
-      if (!existing && f.to_contacts && f.to_contacts.checked) saveToContacts(saved);
+      if (addToContacts) saveToContacts(saved);
     });
     // Entries typed before names could link to Contacts: link any whose name matches a contact exactly.
     outreachOf(a.id).filter((o) => !(o.contact_id && state.contacts.some((c) => c.id === o.contact_id))).forEach((o) => {
@@ -1599,18 +1641,30 @@
       backend.saveOutreach({ id: o.id, contact_id: c.id }).catch(() => {});
     });
     renderOutreach();
-    // Correspondence: emails matched by the Gmail sync, plus anything you add by hand
-    // (LinkedIn messages, calls, emails from people at other companies).
+    // Correspondence about this job: emails matched by the Gmail sync, plus everything logged against this application
+    // (from Outreach, from a contact's page, or here). Entries with a contact are the same records as the contact's history.
     let synced = [], manual = [], corrEdit = null; // corrEdit: null, or { id } while the form is open (id null = new)
     const mailBox = $("#mail-box", el);
-    const corrAll = () => [
-      ...synced.map((m) => ({ ...m, method: "Email", auto: true })),
-      ...manual.map((m) => ({ ...m, auto: false })),
-    ].filter((m) => m.happened_on).sort((x, y) => y.happened_on.localeCompare(x.happened_on));
+    const corrAll = () => {
+      const mine = state.interactions.filter((i) => i.application_id === a.id && (i.kind === "outreach" || i.kind === "reply")).map((i) => {
+        const c = state.contacts.find((x) => x.id === i.contact_id);
+        return { id: i.id, src: "contact", direction: i.kind === "outreach" ? "out" : "in", method: i.method, happened_on: i.happened_on,
+          note: i.note === "Logged from Gmail" ? "" : i.note, contact_id: i.contact_id, counterpart: c ? fullName(c) : "" };
+      });
+      const emailsOf = (id) => { const c = state.contacts.find((x) => x.id === id); return c ? [c.personal_email, c.work_email].filter(Boolean).map((e) => e.toLowerCase()) : []; };
+      // A synced email that is already one of the contact entries above isn't listed twice.
+      const dup = (m) => mine.some((r) => r.method === "Email" && r.happened_on === m.happened_on && r.direction === m.direction
+        && emailsOf(r.contact_id).includes(String(m.counterpart || "").toLowerCase()));
+      return [
+        ...synced.filter((m) => !dup(m)).map((m) => ({ ...m, method: "Email", src: "synced" })),
+        ...manual.map((m) => ({ ...m, src: "manual" })),
+        ...mine,
+      ].filter((m) => m.happened_on).sort((x, y) => y.happened_on.localeCompare(x.happened_on));
+    };
     const corrForm = (c) => `
       <form class="log-form" data-corr-form>
         <input type="hidden" name="contact_id" value="${esc(c ? c.contact_id || "" : "")}">
-        <div class="field"><label>What happened</label><select name="direction">${options([["out", "I reached out"], ["in", "They reached out"]], c ? c.direction : "in")}</select></div>
+        <div class="field"><label>What happened</label><select name="direction">${options([["out", "I reached out"], ["in", "They reached out / replied"]], c ? c.direction : "out")}</select></div>
         <div class="field"><label>Date</label><input name="happened_on" type="date" required value="${esc(c ? c.happened_on : todayISO())}" max="${todayISO()}"></div>
         <div class="field wide"><label>How</label><select name="method">${options(METHODS, c ? c.method : "Email")}</select></div>
         <div class="field wide"><label>Name <span class="muted small">(start typing to find someone in your Contacts)</span></label><input name="counterpart" value="${esc(c ? c.counterpart : "")}"></div>
@@ -1622,23 +1676,23 @@
       const all = corrAll();
       mailEvents = all.map((m) => {
         const out = m.direction === "out";
-        return { date: m.happened_on, kind: out ? "outreach" : "reply",
-          text: m.auto ? (out ? "Email sent" : "Reply received") : `${out ? "You reached out" : "They reached out"} · ${m.method}`,
+        return { date: m.happened_on, kind: out ? "outreach" : "reply", type: "corr",
+          text: m.src === "synced" ? (out ? "Email sent" : "Reply received") : `${out ? "You reached out" : m.src === "contact" ? "They replied" : "They reached out"} · ${m.method}`,
           sub: m.counterpart ? (out ? "to " : "from ") + m.counterpart : "" };
       });
       const tl = $("#tl-box", el);
       if (tl) tl.innerHTML = timelineHtml();
       $("#mail-count", el).textContent = all.length || "";
-      const editing = corrEdit && corrEdit.id ? manual.find((x) => x.id === corrEdit.id) : null;
+      const editing = corrEdit && corrEdit.id ? all.find((x) => x.id === corrEdit.id && x.src !== "synced") : null;
       const rows = all.map((m) => {
         if (editing && m.id === editing.id) return `<div class="mail-row corr-row">${corrForm(editing)}</div>`;
         const out = m.direction === "out";
         const linked = m.contact_id && state.contacts.find((c) => c.id === m.contact_id);
         const who = !m.counterpart ? "" : linked ? `<a href="#/contact/${esc(linked.id)}">${esc(m.counterpart)}</a>` : esc(m.counterpart);
         return `<div class="mail-row corr-row"><span class="badge ${out ? "" : "yes"}">${out ? "Sent" : "Received"} · ${esc(m.method)}</span>
-          <span class="mail-who">${who}${!m.auto && m.counterpart && !linked ? ` <button type="button" class="linkbtn" data-corr-contact="${esc(m.id)}">Save to Contacts</button>` : ""}</span>
+          <span class="mail-who">${who}${m.src === "manual" && m.counterpart && !linked ? ` <button type="button" class="linkbtn" data-corr-contact="${esc(m.id)}">Save to Contacts</button>` : ""}</span>
           <span class="muted small">${esc(fmtDate(m.happened_on))}</span>
-          ${m.auto ? "" : `<button type="button" class="icon-btn" data-corr-edit="${esc(m.id)}" aria-label="Edit" title="Edit">${I.pencil(14)}</button>`}
+          ${m.src === "synced" ? "" : `<button type="button" class="icon-btn" data-corr-edit="${esc(m.id)}" aria-label="Edit" title="Edit">${I.pencil(14)}</button>`}
           ${m.note ? `<span class="muted small corr-note">${esc(m.note)}</span>` : ""}</div>`;
       }).join("");
       const adding = corrEdit && !corrEdit.id;
@@ -1654,7 +1708,8 @@
     };
     const corrDraft = (c) => {
       const [first, ...rest] = personName(c.counterpart).split(/\s+/);
-      state.contactDraft = { appId: a.id, corrId: c.id, name: personName(c.counterpart), prefill: { first_name: first, last_name: rest.join(" ") }, rest: [] };
+      state.contactDraft = { appId: a.id, corrId: c.id, name: personName(c.counterpart), prefill: { first_name: first, last_name: rest.join(" ") }, rest: [],
+        entry: { kind: c.direction === "out" ? "outreach" : "reply", method: c.method, happened_on: c.happened_on, note: c.note || "" } };
       location.hash = "#/new";
     };
     mailBox.addEventListener("click", async (e) => {
@@ -1666,9 +1721,15 @@
       else if ("corrCancel" in d) corrEdit = null;
       else if (d.corrContact) return corrDraft(manual.find((x) => x.id === d.corrContact));
       else if (d.corrDel) {
-        if (!(await confirmBox("Delete this correspondence entry?"))) return;
-        await run(() => backend.deleteCorrespondence(d.corrDel), mailBox);
-        manual = manual.filter((x) => x.id !== d.corrDel);
+        const row = corrAll().find((x) => x.id === d.corrDel);
+        if (!(await confirmBox(row && row.src === "contact" ? "Delete this entry? It is removed from the contact's history too." : "Delete this correspondence entry?"))) return;
+        if (row && row.src === "contact") {
+          await run(() => backend.deleteInteraction(row.id), mailBox);
+          state.interactions = state.interactions.filter((x) => x.id !== row.id);
+        } else {
+          await run(() => backend.deleteCorrespondence(d.corrDel), mailBox);
+          manual = manual.filter((x) => x.id !== d.corrDel);
+        }
         corrEdit = null;
       } else return;
       paintCorr();
@@ -1679,17 +1740,36 @@
       e.preventDefault();
       const f = e.target;
       const name = f.counterpart.value.trim();
-      const row = { application_id: a.id, direction: f.direction.value, method: f.method.value, counterpart: name,
-        happened_on: f.happened_on.value, note: f.note.value.trim(), contact_id: f.contact_id.value || (contactByName(name) || {}).id || null };
-      if (!row.happened_on) return;
-      const existing = corrEdit && corrEdit.id ? manual.find((x) => x.id === corrEdit.id) : null;
-      if (existing) row.id = existing.id;
-      const addToContacts = !row.contact_id && name && f.counterpart.dataset.addContact;
-      const saved = await run(() => backend.saveCorrespondence(row), f);
-      if (existing) Object.assign(existing, saved); else manual.push(saved);
+      const happened_on = f.happened_on.value;
+      if (!happened_on) return;
+      const existing = corrEdit && corrEdit.id ? corrAll().find((x) => x.id === corrEdit.id && x.src !== "synced") : null;
+      const linked = f.contact_id.value || (contactByName(name) || {}).id || null;
+      const base = { method: f.method.value, happened_on, note: f.note.value.trim() };
+      const kind = f.direction.value === "out" ? "outreach" : "reply";
+      const addToContacts = !linked && name && f.counterpart.dataset.addContact;
+      let manualSaved = null;
+      if (linked || (existing && existing.src === "contact")) {
+        // With a contact: one entry that is both this job's correspondence and the contact's history.
+        const entry = { contact_id: linked || existing.contact_id, application_id: a.id, kind, ...base };
+        if (existing && existing.src === "contact") {
+          const saved = await run(() => backend.updateInteraction({ id: existing.id, ...entry }), f);
+          Object.assign(state.interactions.find((x) => x.id === existing.id), saved);
+        } else {
+          if (existing) { // was a name-only entry; now it belongs to a contact
+            await run(() => backend.deleteCorrespondence(existing.id), f);
+            manual = manual.filter((x) => x.id !== existing.id);
+          }
+          state.interactions.push(await run(() => backend.addInteraction(entry), f));
+        }
+      } else {
+        const row = { application_id: a.id, direction: f.direction.value, counterpart: name, contact_id: null, ...base };
+        if (existing) row.id = existing.id;
+        manualSaved = await run(() => backend.saveCorrespondence(row), f);
+        if (existing) Object.assign(manual.find((x) => x.id === existing.id), manualSaved); else manual.push(manualSaved);
+      }
       corrEdit = null;
       paintCorr();
-      if (addToContacts) corrDraft(saved);
+      if (addToContacts && manualSaved) corrDraft({ ...manualSaved, direction: f.direction.value });
     });
     (async () => {
       try { synced = await backend.listApplicationEmails(a.id); } catch (err) { /* table not created yet */ }
@@ -1908,6 +1988,7 @@
       }, el);
       if (existing) Object.assign(existing, saved);
       else state.applications.push(saved);
+      try { await syncInterviewHistory(saved); } catch (err) { /* needs migration 018 */ }
       state.flash = existing ? "Saved." : "Application saved.";
       if (ivAdd.length) return ivDraft(saved, ivAdd);
       location.hash = "#/application/" + saved.id;
@@ -2741,6 +2822,9 @@
             <div class="field"><label for="h-kind">What happened</label><select id="h-kind" name="kind" autofocus>${options([["outreach", "I reached out"], ["reply", "They replied"]])}</select></div>
             <div class="field"><label for="h-date">Date</label><input id="h-date" name="happened_on" type="date" required value="${todayISO()}" max="${todayISO()}"></div>
             <div class="field wide"><label for="h-method">How</label><select id="h-method" name="method">${options(MANUAL_METHODS)}</select>${EMAIL_HINT}</div>
+            <div class="field wide"><label for="h-job">About a job? (optional)</label><select id="h-job" name="application_id">${options([["", "Not about a job"],
+              ...[...state.applications].sort((x, y) => (x.position_title || "").localeCompare(y.position_title || "")).map((x) => [x.id, x.position_title + (x.company ? " · " + x.company : "")])])}</select>
+              <span class="muted small">If you pick one, this also shows in that job's Correspondence.</span></div>
             <div class="field wide"><label for="h-note">Note (optional)</label><input id="h-note" name="note" placeholder="e.g. Asked about the PM role"></div>
             <div class="btns"><button type="button" class="btn ghost" id="log-cancel">Cancel</button><button class="btn primary" type="submit">Add to history</button></div>
           </form>` : ""}
@@ -2748,8 +2832,9 @@
             <div class="tl-item">
               <span class="tl-dot ${i.kind}"></span>
               <div class="what"><b>${i.kind === "linkedin" ? esc(LI_EVENT_TEXT[i.method] || "LinkedIn · " + i.method)
+                : i.kind === "meeting" ? "Interview"
                 : `${i.kind === "outreach" ? "You reached out" : "They replied"} · ${esc(i.method)}`}</b>
-                <span>${esc(fmtDate(i.happened_on))}${i.note ? " · " + esc(i.note) : ""}</span></div>
+                <span>${esc(fmtDate(i.happened_on))}${i.note ? " · " + esc(i.note) : ""}${jobLink(i)}</span></div>
               <button class="icon-btn" data-del="${esc(i.id)}" aria-label="Remove this entry" title="Remove this entry">${I.trash()}</button>
             </div>`).join("")}</div>` : state.logOpen ? "" : `<span class="muted">Nothing logged yet.</span>`}
         </section>
@@ -2775,6 +2860,7 @@
           happened_on: form.happened_on.value,
           method: form.method.value,
           note: form.note.value.trim(),
+          application_id: form.application_id.value || null,
         };
         const saved = await run(() => backend.addInteraction(entry), form);
         state.interactions.push(saved);
@@ -2920,7 +3006,11 @@
         state.contacts.push(saved);
         if (draft && draft.corrId) {
           // Came from a correspondence entry's name: link it, then go back to the application.
-          try { await run(() => backend.saveCorrespondence({ id: draft.corrId, contact_id: saved.id }), el); } catch (err) { /* shown */ }
+          try {
+            // The name-only entry becomes a real one: this job's correspondence and the new contact's history.
+            state.interactions.push(await run(() => backend.addInteraction({ contact_id: saved.id, application_id: draft.appId, ...draft.entry }), el));
+            await run(() => backend.deleteCorrespondence(draft.corrId), el);
+          } catch (err) { /* shown */ }
           state.contactDraft = null;
           state.flash = `${fullName(saved)} saved to Contacts and linked.`;
           location.hash = "#/application/" + draft.appId;
@@ -2933,6 +3023,7 @@
             const rows = interviewsOf(app);
             if (rows[draft.ivIndex]) rows[draft.ivIndex].contact_id = saved.id;
             Object.assign(app, await run(() => backend.saveApplication({ ...app, interviews: rows, interview_dates: rows.map((x) => x.date) }), el));
+            try { await syncInterviewHistory(app); } catch (err) { /* needs migration 018 */ }
           }
           // More new names from the same save: open the next contact form (skipping anyone already in Contacts).
           let next = (draft.rest || []).slice();

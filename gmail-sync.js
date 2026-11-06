@@ -10,7 +10,7 @@
     return `// Job Central — Gmail sync
 // Checks two Gmail folders every hour: Networking (people become contacts, emails are logged
 // in their history) and Jobs (emails are shown under the matching application, and also logged in
-// the history of anyone who is already a contact).
+// the history of anyone who is already a contact, marked as being about that job).
 // Networking: only who an email was from/to and when. Jobs: if the sender doesn't identify the
 // company, the subject and start of the email are scanned for an application's company name.
 // That text stays in Google; only the match (who, when, which application) is sent to the app.
@@ -48,58 +48,68 @@ function sync() {
   const added = newPeople.length ? rpc_('gmail_sync_add_contacts', { p_token: SYNC_TOKEN, p_people: newPeople }) : 0;
   newPeople.forEach((p) => contacts.add(p.email));
 
-  const events = [];
-  networking.forEach((m) => {
-    people_(m, me).filter((p) => contacts.has(p.email))
-      .forEach((p) => events.push({ id: m.id, email: p.email, dir: m.sent ? 'out' : 'in', date: day(m) }));
-  });
-  const logged = events.length ? rpc_('gmail_sync_log', { p_token: SYNC_TOKEN, p_events: events }) : 0;
-
-  // Jobs folder: match each email to an application by the person's email address, else by company, and log it there.
+  // Which application the Jobs and Networking emails are about. People you've linked to an application (in its outreach
+  // log or as an interviewer) decide by their email address; the Jobs folder also matches on the company.
   const apps = rpc_('gmail_sync_applications', { p_token: SYNC_TOKEN }).map((a) => ({ id: a.id, key: companyKey_(a.company), words: companyWords_(a.company).join(' ') }))
     .filter((a) => a.key.length >= 3);
-  // People you've linked to an application (in its outreach log or as an interviewer): their email address decides the application.
   const byEmail = {};
   rpc_('gmail_sync_contact_applications', { p_token: SYNC_TOKEN }).forEach((r) => {
     (byEmail[r.email] = byEmail[r.email] || []).push(r.application_id);
   });
   const jobs = folderMessages_(JOBS_FOLDER, true);
-  // Jobs emails with people who are already contacts also go in those contacts' history (nobody new is added from Jobs).
-  const jobContactEvents = [];
+  const out = (m) => (m.sent ? 'out' : 'in');
+
+  // Contacts: every email goes in their history. When it is about exactly one application, the entry says so,
+  // and it also shows in that application's Correspondence.
+  const events = [];
+  const appIdFor = (p, useCompany) => {
+    const linked = byEmail[p.email] || [];
+    if (linked.length) return linked.length === 1 ? linked[0] : null;
+    if (!useCompany) return null;
+    const app = matchApp_(p, apps);
+    return app ? app.id : null;
+  };
+  networking.forEach((m) => people_(m, me).filter((p) => contacts.has(p.email))
+    .forEach((p) => events.push({ id: m.id, email: p.email, dir: out(m), date: day(m), application_id: appIdFor(p, false) })));
   jobs.forEach((m) => people_(m, me).filter((p) => contacts.has(p.email))
-    .forEach((p) => jobContactEvents.push({ id: m.id, email: p.email, dir: m.sent ? 'out' : 'in', date: day(m) })));
-  const jobHistory = jobContactEvents.length ? rpc_('gmail_sync_log', { p_token: SYNC_TOKEN, p_events: jobContactEvents }) : 0;
+    .forEach((p) => events.push({ id: m.id, email: p.email, dir: out(m), date: day(m), application_id: appIdFor(p, true) })));
+  const logged = events.length ? rpc_('gmail_sync_log', { p_token: SYNC_TOKEN, p_events: events }) : 0;
+
+  // Everything else about an application: people who aren't contacts, contacts linked to several applications, and
+  // emails that only mention the company.
   const jobEvents = [];
-  // Networking emails with someone linked to an application also show under that application.
-  networking.forEach((m) => people_(m, me).forEach((p) => (byEmail[p.email] || []).forEach((appId) =>
-    jobEvents.push({ id: m.id, application_id: appId, email: p.email, dir: m.sent ? 'out' : 'in', date: day(m) }))));
+  const add = (m, appId, p) => jobEvents.push({ id: m.id, application_id: appId, email: p.email, dir: out(m), date: day(m) });
+  networking.forEach((m) => people_(m, me).forEach((p) => {
+    const linked = byEmail[p.email] || [];
+    if (linked.length > 1) linked.forEach((appId) => add(m, appId, p));
+  }));
   jobs.forEach((m) => {
     const others = people_(m, me);
     let found = false;
     others.forEach((p) => {
       const linked = byEmail[p.email] || [];
-      linked.forEach((appId) => {
+      if (linked.length) {
         found = true;
-        jobEvents.push({ id: m.id, application_id: appId, email: p.email, dir: m.sent ? 'out' : 'in', date: day(m) });
-      });
-      if (linked.length) return;
+        if (linked.length > 1) linked.forEach((appId) => add(m, appId, p));
+        return;
+      }
       const app = matchApp_(p, apps);
       if (app) {
         found = true;
-        jobEvents.push({ id: m.id, application_id: app.id, email: p.email, dir: m.sent ? 'out' : 'in', date: day(m) });
+        if (!contacts.has(p.email)) add(m, app.id, p);
       }
     });
     // The sender didn't say which company: look for a company name in the subject and email text.
     if (!found && others.length) {
       const app = matchByContent_(m, apps);
-      if (app) jobEvents.push({ id: m.id, application_id: app.id, email: others[0].email, dir: m.sent ? 'out' : 'in', date: day(m) });
+      if (app) add(m, app.id, others[0]);
     }
   });
   const jobLogged = jobEvents.length ? rpc_('gmail_sync_log_application_emails', { p_token: SYNC_TOKEN, p_events: jobEvents }) : 0;
 
   rpc_('gmail_sync_finish', { p_token: SYNC_TOKEN });
-  console.log('Networking: ' + networking.length + ' emails, added ' + added + ' contacts, logged ' + logged + ' entries. ' +
-    'Jobs: ' + jobs.length + ' emails, ' + jobLogged + ' newly matched to applications, ' + jobHistory + ' logged in contacts\\' history.');
+  console.log('Networking: ' + networking.length + ' emails, added ' + added + ' contacts. Jobs: ' + jobs.length + ' emails. ' +
+    logged + ' entries added to contact history, ' + jobLogged + ' newly matched to applications.');
 }
 
 // Every message (last 30 days) in a folder, including your own replies in those conversations.

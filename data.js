@@ -9,7 +9,7 @@
     "work_email_status", "phone", "referred_by", "event_met_at",
     "notes", "tags",
   ];
-  const INTERACTION_FIELDS = ["contact_id", "kind", "method", "happened_on", "note"];
+  const INTERACTION_FIELDS = ["contact_id", "application_id", "kind", "method", "happened_on", "note"];
   const APPLICATION_FIELDS = [
     "position_title", "company", "location", "job_url", "job_description", "status", "date_applied", "rejection_date",
     "interview_dates", "interviews", "resume_track", "notes", "resume_text", "cover_letter", "application_answers",
@@ -186,6 +186,9 @@
       },
       async addInteraction(i) {
         return check(await sb.from("interactions").insert(pick(i, INTERACTION_FIELDS)).select().single());
+      },
+      async updateInteraction(i) {
+        return check(await sb.from("interactions").update(pick(i, INTERACTION_FIELDS)).eq("id", i.id).select().single());
       },
       async deleteInteraction(id) {
         check(await sb.from("interactions").delete().eq("id", id));
@@ -433,6 +436,12 @@
         state.interactions.push(created);
         persist();
         return { ...created };
+      },
+      async updateInteraction(i) {
+        const existing = state.interactions.find((x) => x.id === i.id);
+        Object.assign(existing, pick(i, INTERACTION_FIELDS));
+        persist();
+        return { ...existing };
       },
       async deleteInteraction(id) {
         state.interactions = state.interactions.filter((x) => x.id !== id);
