@@ -723,3 +723,20 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .corr-row .corr-note { flex-basis: 100%; }
 .corr-row .log-form { flex: 1 1 100%; }
 .mail-list + .doc-actions, .mail-list + .mail-list { margin-top: 12px; }
+
+/* interview notes (markdown) */
+.iv-notes { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; width: 100%; }
+.iv-notes .doc-actions { width: 100%; flex-wrap: wrap; gap: 6px 14px; }
+.iv-notes .inline-doc { background: var(--card-2); border-color: var(--line-3); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.iv-notes .markdown { width: 100%; }
+.md-sm { font-size: 13.5px; line-height: 1.55; }
+.md-sm h1, .md-sm h2, .md-sm h3 { font-size: 14.5px; margin: 10px 0 4px; color: var(--fg); }
+.md-sm p { margin: 0 0 6px; }
+.md-sm ul, .md-sm ol { margin: 0 0 6px; padding-left: 20px; }
+.md-clamp { max-height: 140px; overflow: hidden; position: relative; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+.md-plain { white-space: pre-wrap; font: inherit; margin: 0; }
+.markdown table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: .95em; }
+.markdown th, .markdown td { border: 1px solid var(--line-2); padding: 7px 10px; text-align: left; vertical-align: top; }
+.markdown th { background: var(--card-2); font-weight: 600; }
+.markdown blockquote { margin: 12px 0; padding: 4px 16px; border-left: 3px solid var(--accent); background: var(--card-2); color: var(--fg-2); }
+.markdown hr { border: 0; border-top: 1px solid var(--line-2); margin: 22px 0; }
