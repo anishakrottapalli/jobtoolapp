@@ -1390,7 +1390,7 @@
           <div class="app-aside">
             ${sec("Overview", 1, `<div id="ov-box">${overviewHtml()}</div>`, { cls: "overview" })}
             ${sec("Resume", 4, `<div id="resume-box"></div>`)}
-            ${sec("Interview prep", 7, `<div id="prep-box"><span class="muted">Loading…</span></div><input type="file" id="prep-file" hidden>`)}
+            ${sec("Interview prep", 7, `<div id="prep-box"><span class="muted">Loading…</span></div><input type="file" id="prep-file" hidden accept=".pdf,.doc,.docx,.md,.markdown,.txt,application/pdf,text/markdown,text/plain">`)}
             ${sec("Interviews", 9, `<div id="iv-box">${interviewsHtml()}</div>`)}
             ${sec("Timeline", 10, `<div id="tl-box">${timelineHtml()}</div>`)}
           </div>
@@ -1688,10 +1688,11 @@
              <button class="btn" type="button" data-prep="replace">Replace</button>
              <button class="btn ghost" type="button" data-prep="remove" aria-label="Remove interview prep">${I.trash(14)}</button></div>
            <span class="muted small">Edit the doc, then Replace it with the new version.</span>`
-        : `<span class="muted">No interview prep doc yet</span>`;
+        : `<span class="muted">No interview prep doc yet. Attach a PDF, Word or markdown (.md) file.</span>
+           <div class="doc-actions"><button class="btn" type="button" data-prep="replace">${I.paperclip(15)} Attach a file</button></div>`;
       $$("[data-prep]", prepBox).forEach((b) => b.addEventListener("click", async () => {
         const act = b.dataset.prep;
-        if (act === "open") openFile(f.path);
+        if (act === "open") (isMarkdown(f.name) ? openMarkdown(f.path, f.name) : openFile(f.path)); // markdown opens in the formatted reader
         else if (act === "replace") prepInput.click();
         else if (await confirmBox("Remove the interview prep doc?", "Remove")) {
           try { await run(() => Promise.all(prepFiles.map((x) => backend.removeFile(x.path))), el); } catch (e) { /* shown */ }
