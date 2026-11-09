@@ -2962,7 +2962,8 @@
   function renderSyncSetup(box, intro, setup) {
     const cfg = window.APP_CONFIG;
     const zones = [...new Set([setup.timeZone, "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles"])];
-    const script = window.gmailSync.code({ supabaseUrl: cfg.supabaseUrl, supabaseKey: cfg.supabaseKey, token: setup.token });
+    const buildScript = (timeZone) => window.gmailSync.code({ supabaseUrl: cfg.supabaseUrl, supabaseKey: cfg.supabaseKey, token: setup.token, timeZone });
+    const script = buildScript(setup.timeZone);
     const manifest = window.gmailSync.manifest(setup.timeZone);
     const step = (n, body) => `<li style="margin-bottom:14px"><b>Step ${n}.</b> ${body}</li>`;
     box.innerHTML = `${intro}
@@ -2994,6 +2995,7 @@
     }));
     $("#sync-tz", box).addEventListener("change", (e) => {
       $("#sync-manifest", box).value = window.gmailSync.manifest(e.target.value);
+      $("#sync-code", box).value = buildScript(e.target.value);
     });
     $("#sync-done", box).addEventListener("click", () => renderSyncCard());
   }

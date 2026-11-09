@@ -6,7 +6,7 @@
 // looked at inside Google and never leaves it.
 
 (function () {
-  function code({ supabaseUrl, supabaseKey, token }) {
+  function code({ supabaseUrl, supabaseKey, token, timeZone }) {
     return `// Job Central — Gmail sync
 // Checks two Gmail folders every hour: Networking (people become contacts, emails are logged
 // in their history) and Jobs (emails are shown under the matching application, and also logged in
@@ -20,6 +20,8 @@
 const SUPABASE_URL = ${JSON.stringify(supabaseUrl)};
 const SUPABASE_KEY = ${JSON.stringify(supabaseKey)};
 const SYNC_TOKEN = ${JSON.stringify(token)};
+// Dates in your history use this timezone (not the Apps Script project's own setting).
+const TIME_ZONE = ${JSON.stringify(timeZone || 'America/New_York')};
 // The Gmail folders (labels) to read. Nothing else is searched.
 const NETWORKING_FOLDER = 'Networking';
 const JOBS_FOLDER = 'Jobs';
@@ -35,7 +37,7 @@ function setup() {
 function sync() {
   const contacts = new Set(rpc_('gmail_sync_contacts', { p_token: SYNC_TOKEN }));
   const me = gmail_('profile').emailAddress.toLowerCase();
-  const tz = Session.getScriptTimeZone();
+  const tz = TIME_ZONE;
   const day = (m) => Utilities.formatDate(new Date(m.at), tz, 'yyyy-MM-dd');
 
   // Networking folder: everyone who isn't a contact yet becomes one, then emails to or from contacts are logged.
