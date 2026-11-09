@@ -176,6 +176,7 @@
     row.innerHTML = `<input type="date" class="iv-date" aria-label="Interview date" value="${esc(iv.date || "")}">
       <input type="text" class="iv-with" aria-label="Who the interview was with" placeholder="With (type a name)" value="${esc(iv.with || "")}">
       <button type="button" class="icon-btn" data-iv-del aria-label="Remove interview" title="Remove">${I.trash(14)}</button>`;
+    row.dataset.notes = iv.notes || "";
     const who = $(".iv-with", row);
     if (iv.contact_id && state.contacts.some((x) => x.id === iv.contact_id)) who.dataset.contactId = iv.contact_id;
     attachNamePicker(who);
@@ -185,7 +186,7 @@
   function readIvRow(row) {
     const inp = $(".iv-with", row), who = inp.value.trim();
     const c = (inp.dataset.contactId && state.contacts.find((x) => x.id === inp.dataset.contactId)) || contactByName(personName(who));
-    return { date: $(".iv-date", row).value, with: who, contact_id: c ? c.id : null, add: !!inp.dataset.addContact && !c };
+    return { date: $(".iv-date", row).value, with: who, contact_id: c ? c.id : null, notes: row.dataset.notes || "", add: !!inp.dataset.addContact && !c };
   }
   const cleanIvs = (rows) => rows.filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
   // Start adding people from interviews to Contacts, one contact form after another. items: [{ idx, who }]
@@ -1037,6 +1038,7 @@
     return { key: "applied", label: d ? `Applied · ${d}d` : "Applied today", cls: "yes" };
   }
 
+  const mdHtml = (text) => (window.marked && window.DOMPurify ? DOMPurify.sanitize(marked.parse(text)) : `<pre class="md-plain">${esc(text)}</pre>`);
   const agoText = (iso) => { const d = daysSince(iso); return d === 0 ? "today" : d === 1 ? "1 day ago" : `${d} days ago`; };
   // The line under the stage name in the Overview.
   function stageSub(a, st) {
@@ -1201,7 +1203,7 @@
   // Interview rounds as {date, with}, oldest first. Older records only have dates.
   function interviewsOf(a) {
     const list = Array.isArray(a.interviews) && a.interviews.length ? a.interviews : (a.interview_dates || []).map((d) => ({ date: d, with: "" }));
-    return list.map((x) => ({ date: x.date, with: x.with || "",
+    return list.map((x) => ({ date: x.date, with: x.with || "", notes: x.notes || "",
       contact_id: x.contact_id && state.contacts.some((c) => c.id === x.contact_id) ? x.contact_id : (contactByName(personName(x.with)) || {}).id || null }))
       .filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
   }
@@ -1247,18 +1249,32 @@
     };
     let mailEvents = [];
     let ivEdit = false; // editing the Interviews box in place
+    let ivNotesEdit = null; // index of the interview whose notes are being written
     const ivWho = (iv, n) => {
       if (!iv.with) return `<span class="muted">Who it was with: not recorded</span>`;
       return iv.contact_id
         ? `<span class="muted">with <a href="#/contact/${esc(iv.contact_id)}">${esc(iv.with)}</a></span>`
         : `<span class="muted">with ${esc(iv.with)} · <button type="button" class="linkbtn" data-iv-contact="${n}">Save to Contacts</button></span>`;
     };
+    // Notes for each interview, written in markdown: click to write; they show formatted, and open full-screen to read.
+    const ivNotes = (iv, n) => ivNotesEdit === n
+      ? `<div class="iv-notes"><textarea class="inline-doc iv-notes-ta autogrow" rows="10" aria-label="Interview #${n + 1} notes"
+            placeholder="Write notes in markdown: # Heading, - bullets, **bold**, tables, > quotes, [links](https://…)">${esc(iv.notes)}</textarea>
+          <div class="doc-actions"><span class="muted small">Markdown supported</span>
+            <button type="button" class="linkbtn" data-iv-notes-load>Load from a .md file</button><span class="grow"></span>
+            <button type="button" class="btn ghost" data-iv-notes-cancel>Cancel</button><button type="button" class="btn primary" data-iv-notes-save="${n}">Save notes</button></div>
+          <input type="file" class="iv-notes-file" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden></div>`
+      : iv.notes
+        ? `<div class="iv-notes"><div class="markdown md-sm md-clamp">${mdHtml(iv.notes)}</div>
+            <div class="doc-actions"><button type="button" class="linkbtn" data-iv-notes-read="${n}">Read full notes</button>
+              <button type="button" class="linkbtn" data-iv-notes-edit="${n}">Edit notes</button></div></div>`
+        : `<div class="iv-notes"><button type="button" class="linkbtn" data-iv-notes-edit="${n}">+ Add notes</button></div>`;
     const interviewsHtml = () => ivEdit
       ? `<div id="iv-rows"></div>
          <div class="doc-actions"><button type="button" class="btn" data-iv-add>${I.plus(15)} Add interview</button></div>
          <div class="doc-actions"><button type="button" class="btn ghost" data-iv-cancel>Cancel</button><button type="button" class="btn primary" data-iv-save>Save</button></div>`
       : (interviews.length ? `<div class="iv-list">${interviews.map((iv, n) => `
-          <div class="iv-item"><b>Interview #${n + 1}</b><span>${esc(fmtDate(iv.date))}</span>${ivWho(iv, n)}</div>`).join("")}</div>`
+          <div class="iv-item"><b>Interview #${n + 1}</b><span>${esc(fmtDate(iv.date))}</span>${ivWho(iv, n)}${ivNotes(iv, n)}</div>`).join("")}</div>`
         : `<span class="muted">No interviews yet.</span>`)
         + `<div class="doc-actions"><button type="button" class="btn" data-iv-edit>${interviews.length ? I.pencil(14) + " Edit interviews" : I.plus(15) + " Add interview"}</button></div>`;
     let tlOpen = false; // the timeline gets long, so it stays collapsed until asked for
@@ -1577,17 +1593,41 @@
     const ivBox = $("#iv-box", el);
     const paintIv = () => {
       ivBox.innerHTML = interviewsHtml();
+      const ta = $(".iv-notes-ta", ivBox);
+      if (ta) { growTa(ta); ta.focus(); }
       if (ivEdit) {
         const rows = $("#iv-rows", ivBox);
         (interviews.length ? interviews : [{}]).forEach((iv) => rows.appendChild(makeIvRow(iv)));
       }
     };
+    // "Load from a .md file": put the file's text into the notes box (you can still change it before saving).
+    ivBox.addEventListener("change", async (e) => {
+      const input = e.target.closest(".iv-notes-file");
+      const file = input && input.files[0];
+      if (!file) return;
+      const ta = $(".iv-notes-ta", ivBox);
+      ta.value = await file.text();
+      ta.dispatchEvent(new Event("input"));
+      input.value = "";
+    });
     ivBox.addEventListener("click", async (e) => {
       const t = e.target.closest("button");
       if (!t || t.closest(".np") || t.closest(".iv-row")) return; // name suggestions and row removal handle themselves
       const d = t.dataset;
-      if ("ivContact" in d) return ivDraft(a, [{ idx: Number(d.ivContact), who: interviews[Number(d.ivContact)].with }]);
-      if ("ivEdit" in d) ivEdit = true;
+      if ("ivNotesEdit" in d) ivNotesEdit = Number(d.ivNotesEdit);
+      else if ("ivNotesCancel" in d) ivNotesEdit = null;
+      else if ("ivNotesRead" in d) { const n = Number(d.ivNotesRead); return showMarkdown(interviews[n].notes, `Interview ${n + 1}${interviews[n].with ? " with " + interviews[n].with : ""}.md`); }
+      else if ("ivNotesLoad" in d) { $(".iv-notes-file", ivBox).click(); return; }
+      else if ("ivNotesSave" in d) {
+        const n = Number(d.ivNotesSave);
+        const notes = $(".iv-notes-ta", ivBox).value.trim();
+        const rows = interviews.map((iv, i) => ({ date: iv.date, with: iv.with, contact_id: iv.contact_id, notes: i === n ? notes : iv.notes }));
+        const saved = await run(() => backend.saveApplication({ ...a, interviews: rows, interview_dates: rows.map((x) => x.date) }), el);
+        Object.assign(a, saved);
+        interviews = interviewsOf(a);
+        ivNotesEdit = null;
+      } else if ("ivContact" in d) return ivDraft(a, [{ idx: Number(d.ivContact), who: interviews[Number(d.ivContact)].with }]);
+      else if ("ivEdit" in d) ivEdit = true;
       else if ("ivCancel" in d) ivEdit = false;
       else if ("ivAdd" in d) {
         const row = makeIvRow();
@@ -1597,7 +1637,7 @@
       } else if ("ivSave" in d) {
         const list = cleanIvs($$(".iv-row", ivBox).map(readIvRow));
         const toAdd = list.map((x, idx) => ({ idx, who: x.with, add: x.add })).filter((x) => x.add && x.who); // new names to add to Contacts after saving
-        const rows = list.map(({ date, with: who, contact_id }) => ({ date, with: who, contact_id }));
+        const rows = list.map(({ date, with: who, contact_id, notes }) => ({ date, with: who, contact_id, notes }));
         const saved = await run(() => backend.saveApplication({ ...a, interviews: rows, interview_dates: rows.map((x) => x.date) }), el);
         Object.assign(a, saved);
         interviews = interviewsOf(a);
@@ -2215,12 +2255,12 @@
     });
 
     // Interviews: a date per round, added or removed here.
-    const addIv = (d = "", who = "", cid = null) => {
-      const row = makeIvRow({ date: d, with: who, contact_id: cid });
+    const addIv = (d = "", who = "", cid = null, notes = "") => {
+      const row = makeIvRow({ date: d, with: who, contact_id: cid, notes });
       $("#iv-list", el).appendChild(row);
       if (!d) $(".iv-date", row).focus();
     };
-    interviewsOf(a).forEach((iv) => addIv(iv.date, iv.with, iv.contact_id));
+    interviewsOf(a).forEach((iv) => addIv(iv.date, iv.with, iv.contact_id, iv.notes));
     $("#add-iv", el).addEventListener("click", () => addIv());
     // Emails the Gmail sync matched to this application: pick one to add its date as an interview
     // (the interview itself is usually later, so the date can be changed afterwards).
@@ -2274,7 +2314,7 @@
       const data = { id: existing ? existing.id : undefined };
       const ivRows = cleanIvs($$(".iv-row", el).map(readIvRow));
       const ivAdd = ivRows.map((x, idx) => ({ idx, who: x.with, add: x.add })).filter((x) => x.add && x.who); // new names to add to Contacts after saving
-      data.interviews = ivRows.map(({ date, with: who, contact_id }) => ({ date, with: who, contact_id }));
+      data.interviews = ivRows.map(({ date, with: who, contact_id, notes }) => ({ date, with: who, contact_id, notes }));
       data.interview_dates = data.interviews.map((x) => x.date);
       for (const [k, v] of fd.entries()) data[k] = typeof v === "string" ? v.trim() : v;
       data.resume_tailored = data.resume_kind === "tailored";
@@ -2357,7 +2397,12 @@
       alert("Couldn't open the file: " + err.message);
       return;
     }
-    const html = window.marked && window.DOMPurify ? DOMPurify.sanitize(marked.parse(text)) : `<pre>${esc(text)}</pre>`;
+    showMarkdown(text, name);
+  }
+
+  // The full-screen reader for markdown text.
+  function showMarkdown(text, name) {
+    const html = mdHtml(text);
     const el = document.createElement("div");
     el.className = "reader";
     el.innerHTML = `
