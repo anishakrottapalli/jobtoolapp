@@ -13,7 +13,7 @@
   const APPLICATION_FIELDS = [
     "position_title", "company", "location", "job_url", "job_description", "status", "date_applied", "rejection_date", "offer_date", "offer_rejected_date",
     "interview_dates", "interviews", "resume_track", "notes", "resume_text", "cover_letter", "application_answers",
-    "questions", "resume_tailored", "resume_file_path", "resume_file_name",
+    "questions", "career_fit", "resume_tailored", "resume_file_path", "resume_file_name",
   ];
   const CORRESPONDENCE_FIELDS = ["application_id", "direction", "method", "counterpart", "contact_id", "happened_on", "note"];
   const OUTREACH_FIELDS = ["application_id", "group_id", "contact_id", "name", "title_company", "update_text", "sort_order"];

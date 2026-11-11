@@ -1361,6 +1361,7 @@
           <div class="app-main">
             ${sec("Job description", 2, `<div class="rich jd" id="jd-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Job description"
               data-placeholder="Click here and paste the job description. Bullets and formatting are kept."></div><span class="muted small" id="jd-status"></span>`)}
+            ${sec("Career fit", 3, `<textarea id="fit-text" class="inline-doc autogrow" rows="4" placeholder="Click here and paste your career fit analysis">${esc(a.career_fit)}</textarea><span class="muted small" id="fit-status"></span>`)}
             ${sec("Notes", 3, `<textarea id="notes-text" class="inline-doc autogrow" rows="3" placeholder="Click here to add notes">${esc(a.notes)}</textarea><span class="muted small" id="notes-status"></span>`)}
             ${sec("Cover letter", 5, `<div class="doc-wrap"><textarea id="cover-text" class="inline-doc autogrow" rows="4" placeholder="Click here to write or paste your cover letter">${esc(a.cover_letter)}</textarea>
               <button class="icon-btn doc-copy" type="button" data-copy-el="#cover-text" title="Copy cover letter" aria-label="Copy cover letter">${I.copy()}</button></div>
@@ -1452,6 +1453,7 @@
         savedFlag(statusSel);
       });
     };
+    autoSave($("#fit-text", el), "career_fit", "#fit-status");
     autoSave($("#notes-text", el), "notes", "#notes-status");
     autoSave($("#cover-text", el), "cover_letter", "#cover-status");
     $$("[data-copy-el]", el).forEach((b) => wireCopy(b, () => $(b.dataset.copyEl, el).value));
