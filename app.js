@@ -100,6 +100,18 @@
     d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     return d;
   }
+  function prevWeekISO() {
+    const d = weekStart();
+    d.setDate(d.getDate() - 7);
+    return isoOf(d);
+  }
+  // Small "▲ 12% vs last week" pill. Shows a % when last week had a number, otherwise the plain count.
+  function delta(now, before) {
+    if (now === before) return `<span class="delta-row"><span class="delta flat">— 0</span><span class="delta-note">same as last week</span></span>`;
+    const up = now > before;
+    const amount = before ? Math.round((Math.abs(now - before) / before) * 100) + "%" : Math.abs(now - before);
+    return `<span class="delta-row"><span class="delta ${up ? "up" : "down"}"><i></i>${amount}</span><span class="delta-note">vs last week</span></span>`;
+  }
   function parseISO(iso) {
     const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
     return new Date(y, m - 1, d);
@@ -784,6 +796,8 @@
       replied,
       rate: contacted ? Math.round((replied / contacted) * 100) : null,
       contactedThisWeek: all.filter(({ s }) => s.outreach.some((i) => i.happened_on >= mondayISO)).length,
+      contactedLastWeek: all.filter(({ s }) => s.outreach.some((i) => i.happened_on >= prevWeekISO() && i.happened_on < mondayISO)).length,
+      addedLastWeek: state.contacts.filter((c) => c.created_at && isoOf(new Date(c.created_at)) >= prevWeekISO() && isoOf(new Date(c.created_at)) < mondayISO).length,
       pending: all.filter(({ s }) => s.waiting).length,
       mondayLabel: monday.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }),
     };
@@ -868,7 +882,7 @@
       <h2 class="section-title">Applications</h2>
       <div class="stats">
         ${appStat("all", `<span class="label">Applied This Week</span><span class="value">${ap.thisWeek}</span>
-          <span class="sub">${ap.total} applications in total</span>`)}
+          ${delta(ap.thisWeek, ap.lastWeek)}`)}
         ${appStat("inplay", `<span class="label">In Play</span><span class="value">${ap.inPlay}</span>
           <span class="sub">Applied and not rejected</span>`)}
         ${appStat("interviewing", `<span class="label">Interviewing</span><span class="value">${ap.interviewing}</span>
@@ -879,12 +893,12 @@
       <h2 class="section-title">Networking</h2>
       <div class="stats">
         ${stat("all", `<span class="label">Total Contacts</span><span class="value">${st.total}</span>
-          <span class="sub">${st.addedThisWeek ? `+${st.addedThisWeek} added this week` : "None added this week"}</span>`)}
+          ${delta(st.addedThisWeek, st.addedLastWeek)}`)}
         ${stat("replied", `<span class="label">Reply Rate</span><span class="value">${st.rate == null ? "—" : st.rate + "%"}</span>
           <div class="meter"><div style="width:${st.rate || 0}%"></div></div>
           <span class="sub">${st.contacted ? `${st.replied} of ${st.contacted} contacted replied` : "Log outreach to see this"}</span>`)}
         ${stat("contacted", `<span class="label">Contacted This Week</span><span class="value">${st.contactedThisWeek}</span>
-          <span class="sub">Since ${esc(st.mondayLabel)}</span>`)}
+          ${delta(st.contactedThisWeek, st.contactedLastWeek)}`)}
         ${stat("waiting", `<span class="label">Pending Follow-ups</span><span class="value${st.pending ? " warn" : ""}">${st.pending}</span>
           <span class="sub">Contacted, no reply yet</span>`)}
       </div>`;
@@ -1116,6 +1130,7 @@
     return {
       total: state.applications.filter((a) => a.status === "completed").length,
       thisWeek: state.applications.filter((a) => a.status === "completed" && a.date_applied >= mondayISO).length,
+      lastWeek: state.applications.filter((a) => a.status === "completed" && a.date_applied >= prevWeekISO() && a.date_applied < mondayISO).length,
       inPlay: stages.filter((s) => !["rejected", "offer_rejected", "to_start", "in_progress", "ghosted"].includes(s.key)).length,
       interviewing: stages.filter((s) => s.key === "interviewing").length,
       ghosted: stages.filter((s) => s.key === "ghosted").length,
