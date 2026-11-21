@@ -751,3 +751,31 @@ textarea.autogrow { overflow: hidden; resize: none; }
 .markdown th { background: var(--card-2); font-weight: 600; }
 .markdown blockquote { margin: 12px 0; padding: 4px 16px; border-left: 3px solid var(--accent); background: var(--card-2); color: var(--fg-2); }
 .markdown hr { border: 0; border-top: 1px solid var(--line-2); margin: 22px 0; }
+
+/* ---------- sidebar + tables, matched to the reference screenshot ---------- */
+.sidebar { padding: 20px 16px; gap: 20px; border-right: 1px solid var(--line-soft); }
+.brand { font-weight: 600; letter-spacing: -0.02em; font-size: 16px; }
+.brand-mark { border-radius: 9px; }
+.nav-head { text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 500; }
+.nav-item { height: 40px; border-radius: 10px; font-size: 13.5px; font-weight: 500; letter-spacing: -0.01em; }
+.nav-item svg { color: var(--muted); }
+.nav-item:hover svg { color: var(--fg-3); }
+.nav-item.active svg { color: #fff; }
+.user-chip { border-radius: 12px; }
+
+.table-card.card { border-radius: 20px; box-shadow: none; overflow: hidden; }
+.table-head { padding: 16px 20px; border-bottom: none; }
+.table-head h2 { font-size: 15px; font-weight: 500; letter-spacing: -0.01em; }
+/* filter chips become one segmented tab strip: a grey track with a white selected tab */
+.filters:has(.chip) { background: var(--card-2); border: 1px solid var(--line-soft); border-radius: 12px; padding: 4px; gap: 2px; }
+.chip { border: none; border-radius: 9px; height: 30px; padding: 0 12px; color: var(--muted); font-weight: 500; }
+.chip:hover { background: none; color: var(--fg); }
+.chip.on { background: var(--card); border: none; color: var(--fg); font-weight: 600; box-shadow: 0 1px 2px rgba(20, 22, 26, .08); }
+.filters .select { border-color: transparent; background-color: transparent; }
+.grid-row.head { padding-top: 12px; padding-bottom: 12px; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); font-size: 12px; font-weight: 400; letter-spacing: 0; }
+.grid-row.head button { font-weight: 400; }
+.grid-row.item { min-height: 64px; }
+.grid-row.item:hover, .grid-row.item.active { background: var(--card-2); }
+.who-cell .names b, .cell:first-child { font-weight: 500; }
+.badge { border-radius: 999px; }
+.badge.sm { border-radius: 999px; }
