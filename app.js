@@ -169,29 +169,58 @@
     });
   }
 
-  // One interview row (date, who with, remove) used by the application page and the edit form.
+  // One interview row (date, the people it was with, remove) used by the application page and the edit form.
+  // An interview can have several people; each is a name box with its own Contacts suggestions.
+  function makeIvPerson(p = {}) {
+    const line = document.createElement("div");
+    line.className = "iv-person";
+    line.innerHTML = `<input type="text" class="iv-with" aria-label="Person the interview was with" placeholder="With (type a name)" value="${esc(p.name || "")}">
+      <button type="button" class="icon-btn" data-iv-person-del aria-label="Remove person" title="Remove person">${I.close(14)}</button>`;
+    const who = $(".iv-with", line);
+    if (p.contact_id && state.contacts.some((x) => x.id === p.contact_id)) who.dataset.contactId = p.contact_id;
+    attachNamePicker(who);
+    return line;
+  }
   function makeIvRow(iv = {}) {
     const row = document.createElement("div");
     row.className = "iv-row";
     row.innerHTML = `<input type="date" class="iv-date" aria-label="Interview date" value="${esc(iv.date || "")}">
-      <input type="text" class="iv-with" aria-label="Who the interview was with" placeholder="With (type a name)" value="${esc(iv.with || "")}">
-      <button type="button" class="icon-btn" data-iv-del aria-label="Remove interview" title="Remove">${I.trash(14)}</button>`;
-    const who = $(".iv-with", row);
-    if (iv.contact_id && state.contacts.some((x) => x.id === iv.contact_id)) who.dataset.contactId = iv.contact_id;
-    attachNamePicker(who);
+      <div class="iv-people"></div>
+      <button type="button" class="icon-btn" data-iv-del aria-label="Remove interview" title="Remove interview">${I.trash(14)}</button>
+      <button type="button" class="linkbtn iv-add-person" data-iv-person-add>+ Add person</button>`;
+    const box = $(".iv-people", row);
+    const people = iv.people && iv.people.length ? iv.people : [{}];
+    people.forEach((p) => box.appendChild(makeIvPerson(p)));
     $("[data-iv-del]", row).addEventListener("click", () => row.remove());
+    $("[data-iv-person-add]", row).addEventListener("click", () => {
+      const line = makeIvPerson();
+      box.appendChild(line);
+      $(".iv-with", line).focus();
+    });
+    box.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-iv-person-del]");
+      if (!b) return;
+      if (box.children.length > 1) b.closest(".iv-person").remove();
+      else { const inp = $(".iv-with", box); inp.value = ""; delete inp.dataset.contactId; delete inp.dataset.addContact; }
+    });
     return row;
   }
   function readIvRow(row) {
-    const inp = $(".iv-with", row), who = inp.value.trim();
-    const c = (inp.dataset.contactId && state.contacts.find((x) => x.id === inp.dataset.contactId)) || contactByName(personName(who));
-    return { date: $(".iv-date", row).value, with: who, contact_id: c ? c.id : null, add: !!inp.dataset.addContact && !c };
+    const people = $$(".iv-with", row).map((inp) => {
+      const name = inp.value.trim();
+      const c = (inp.dataset.contactId && state.contacts.find((x) => x.id === inp.dataset.contactId)) || contactByName(personName(name));
+      return { name, contact_id: c ? c.id : null, add: !!inp.dataset.addContact && !c };
+    }).filter((p) => p.name);
+    return { date: $(".iv-date", row).value, people, with: people.map((p) => p.name).join(", "), contact_id: (people[0] || {}).contact_id || null };
   }
+  // What gets saved for an interview, and the new names to offer for Contacts (idx = interview, pidx = person).
+  const ivStore = ({ date, with: who, contact_id, people }) => ({ date, with: who, contact_id, people: people.map(({ name, contact_id: cid }) => ({ name, contact_id: cid })) });
+  const ivNewPeople = (list) => list.flatMap((x, idx) => x.people.map((p, pidx) => ({ idx, pidx, who: p.name, add: p.add })).filter((p) => p.add && p.who));
   const cleanIvs = (rows) => rows.filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
   // Start adding people from interviews to Contacts, one contact form after another. items: [{ idx, who }]
-  const ivQueueItem = ({ idx, who }) => {
+  const ivQueueItem = ({ idx, pidx = 0, who }) => {
     const [first, ...rest] = personName(who).split(/\s+/);
-    return { ivIndex: idx, name: personName(who), prefill: { first_name: first, last_name: rest.join(" ") } };
+    return { ivIndex: idx, ivPerson: pidx, name: personName(who), prefill: { first_name: first, last_name: rest.join(" ") } };
   };
   const ivDraft = (a, items) => {
     const seen = new Set();
@@ -1199,17 +1228,23 @@
     }));
   }
 
-  // Interview rounds as {date, with}, oldest first. Older records only have dates.
+  // Interview rounds as {date, with, people, contact_id}, oldest first. "with" is the people's names joined with commas.
+  // Older records only have dates, or one "with" text that may list several names.
+  const splitPeople = (text) => (text || "").split(/,\s*(?![^(]*\))/).map((x) => x.trim().replace(/^and\s+/i, "")).filter(Boolean);
   function interviewsOf(a) {
     const list = Array.isArray(a.interviews) && a.interviews.length ? a.interviews : (a.interview_dates || []).map((d) => ({ date: d, with: "" }));
-    return list.map((x) => ({ date: x.date, with: x.with || "",
-      contact_id: x.contact_id && state.contacts.some((c) => c.id === x.contact_id) ? x.contact_id : (contactByName(personName(x.with)) || {}).id || null }))
-      .filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
+    const linked = (id) => (id && state.contacts.some((c) => c.id === id) ? id : null);
+    return list.map((x) => {
+      const raw = Array.isArray(x.people) && x.people.length ? x.people
+        : splitPeople(x.with).map((name, i, all) => ({ name, contact_id: all.length === 1 ? x.contact_id : null }));
+      const people = raw.map((p) => ({ name: p.name || "", contact_id: linked(p.contact_id) || (contactByName(personName(p.name)) || {}).id || null })).filter((p) => p.name);
+      return { date: x.date, people, with: people.map((p) => p.name).join(", "), contact_id: (people[0] || {}).contact_id || null };
+    }).filter((x) => x.date).sort((x, y) => x.date.localeCompare(y.date));
   }
 
   // Interviews with someone in Contacts are also noted in that person's history (kind "meeting").
   async function syncInterviewHistory(app) {
-    const rows = interviewsOf(app).map((iv, n) => ({ ...iv, n: n + 1 })).filter((iv) => iv.contact_id);
+    const rows = interviewsOf(app).flatMap((iv, n) => iv.people.filter((p) => p.contact_id).map((p) => ({ date: iv.date, contact_id: p.contact_id, n: n + 1 })));
     const have = state.interactions.filter((i) => i.application_id === app.id && i.kind === "meeting");
     const keep = new Set();
     for (const iv of rows) {
@@ -1250,10 +1285,10 @@
     let mailEvents = [];
     let ivEdit = false; // editing the Interviews box in place
     const ivWho = (iv, n) => {
-      if (!iv.with) return `<span class="muted">Who it was with: not recorded</span>`;
-      return iv.contact_id
-        ? `<span class="muted">with <a href="#/contact/${esc(iv.contact_id)}">${esc(iv.with)}</a></span>`
-        : `<span class="muted">with ${esc(iv.with)} · <button type="button" class="linkbtn" data-iv-contact="${n}">Save to Contacts</button></span>`;
+      if (!iv.people.length) return `<span class="muted">Who it was with: not recorded</span>`;
+      return iv.people.map((p, pn) => p.contact_id
+        ? `<span class="muted">with <a href="#/contact/${esc(p.contact_id)}">${esc(p.name)}</a></span>`
+        : `<span class="muted">with ${esc(p.name)} · <button type="button" class="linkbtn" data-iv-contact="${n}:${pn}">Save to Contacts</button></span>`).join("");
     };
     const interviewsHtml = () => ivEdit
       ? `<div id="iv-rows"></div>
@@ -1590,7 +1625,10 @@
       const t = e.target.closest("button");
       if (!t || t.closest(".np") || t.closest(".iv-row")) return; // name suggestions and row removal handle themselves
       const d = t.dataset;
-      if ("ivContact" in d) return ivDraft(a, [{ idx: Number(d.ivContact), who: interviews[Number(d.ivContact)].with }]);
+      if ("ivContact" in d) {
+        const [n, pn] = d.ivContact.split(":").map(Number);
+        return ivDraft(a, [{ idx: n, pidx: pn, who: interviews[n].people[pn].name }]);
+      }
       if ("ivEdit" in d) ivEdit = true;
       else if ("ivCancel" in d) ivEdit = false;
       else if ("ivAdd" in d) {
@@ -1600,8 +1638,8 @@
         return;
       } else if ("ivSave" in d) {
         const list = cleanIvs($$(".iv-row", ivBox).map(readIvRow));
-        const toAdd = list.map((x, idx) => ({ idx, who: x.with, add: x.add })).filter((x) => x.add && x.who); // new names to add to Contacts after saving
-        const rows = list.map(({ date, with: who, contact_id }) => ({ date, with: who, contact_id }));
+        const toAdd = ivNewPeople(list); // new names to add to Contacts after saving
+        const rows = list.map(ivStore);
         const saved = await run(() => backend.saveApplication({ ...a, interviews: rows, interview_dates: rows.map((x) => x.date) }), el);
         Object.assign(a, saved);
         interviews = interviewsOf(a);
@@ -2220,12 +2258,12 @@
     });
 
     // Interviews: a date per round, added or removed here.
-    const addIv = (d = "", who = "", cid = null) => {
-      const row = makeIvRow({ date: d, with: who, contact_id: cid });
+    const addIv = (d = "", people = []) => {
+      const row = makeIvRow({ date: d, people });
       $("#iv-list", el).appendChild(row);
       if (!d) $(".iv-date", row).focus();
     };
-    interviewsOf(a).forEach((iv) => addIv(iv.date, iv.with, iv.contact_id));
+    interviewsOf(a).forEach((iv) => addIv(iv.date, iv.people));
     $("#add-iv", el).addEventListener("click", () => addIv());
     // Emails the Gmail sync matched to this application: pick one to add its date as an interview
     // (the interview itself is usually later, so the date can be changed afterwards).
@@ -2278,8 +2316,8 @@
       const fd = new FormData(form);
       const data = { id: existing ? existing.id : undefined };
       const ivRows = cleanIvs($$(".iv-row", el).map(readIvRow));
-      const ivAdd = ivRows.map((x, idx) => ({ idx, who: x.with, add: x.add })).filter((x) => x.add && x.who); // new names to add to Contacts after saving
-      data.interviews = ivRows.map(({ date, with: who, contact_id }) => ({ date, with: who, contact_id }));
+      const ivAdd = ivNewPeople(ivRows); // new names to add to Contacts after saving
+      data.interviews = ivRows.map(ivStore);
       data.interview_dates = data.interviews.map((x) => x.date);
       for (const [k, v] of fd.entries()) data[k] = typeof v === "string" ? v.trim() : v;
       data.resume_tailored = data.resume_kind === "tailored";
@@ -3346,8 +3384,12 @@
           const app = state.applications.find((x) => x.id === draft.appId);
           if (app) {
             const rows = interviewsOf(app);
-            if (rows[draft.ivIndex]) rows[draft.ivIndex].contact_id = saved.id;
-            Object.assign(app, await run(() => backend.saveApplication({ ...app, interviews: rows, interview_dates: rows.map((x) => x.date) }), el));
+            const iv = rows[draft.ivIndex];
+            if (iv && iv.people[draft.ivPerson || 0]) {
+              iv.people[draft.ivPerson || 0].contact_id = saved.id;
+              iv.contact_id = iv.people[0].contact_id;
+            }
+            Object.assign(app, await run(() => backend.saveApplication({ ...app, interviews: rows.map(ivStore), interview_dates: rows.map((x) => x.date) }), el));
             try { await syncInterviewHistory(app); } catch (err) { /* needs migration 018 */ }
           }
           // More new names from the same save: open the next contact form (skipping anyone already in Contacts).
