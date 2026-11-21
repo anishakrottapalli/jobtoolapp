@@ -1045,7 +1045,7 @@
     if (st.key === "applied") return a.date_applied ? agoText(a.date_applied) : "";
     if (st.key === "ghosted") return "Applied " + agoText(a.date_applied);
     if (st.key === "interviewing") return last ? "Latest: " + fmtDate(last.date) + (last.with ? " with " + last.with : "") : "";
-    if (st.key === "offer_received") return fmtDate(a.offer_date);
+    if (st.key === "offer_received") return a.offer_signed_date ? "Signed " + fmtDate(a.offer_signed_date) : fmtDate(a.offer_date);
     if (st.key === "offer_rejected") return fmtDate(a.offer_rejected_date);
     if (st.key === "rejected") return fmtDate(a.rejection_date);
     if (st.key === "in_progress") return "Started, not submitted";
@@ -1120,10 +1120,10 @@
 
   function exportApplications(list) {
     const header = ["Position Title", "Company", "Location", "Job Link", "Status", "Stage", "Date Applied",
-      "Interview Dates", "Rejection Date", "Resume", "Resume File", "Notes", "Cover Letter", "Questions", "Outreach", "Offer Received", "Offer Rejected"];
+      "Interview Dates", "Rejection Date", "Resume", "Resume File", "Notes", "Cover Letter", "Questions", "Outreach", "Offer Received", "Offer Signed", "Offer Rejected"];
     downloadCsv(`applications-${todayISO()}.csv`, header, list.map(({ a, st }) => [
       a.position_title, a.company, a.location, a.job_url, a.status === "completed" ? "Applied" : a.status === "in_progress" ? "In progress" : "To Start", st.label,
-      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, resumeLabel(a), a.resume_file_name, a.notes, a.cover_letter, questionsText(a), outreachText(a), a.offer_date, a.offer_rejected_date,
+      a.date_applied, (a.interview_dates || []).join("; "), a.rejection_date, resumeLabel(a), a.resume_file_name, a.notes, a.cover_letter, questionsText(a), outreachText(a), a.offer_date, a.offer_signed_date, a.offer_rejected_date,
     ]));
   }
 
@@ -1242,6 +1242,7 @@
       if (a.status === "completed" && a.date_applied) ev.push({ date: a.date_applied, text: "Applied", kind: "outreach", type: "status" });
       interviews.forEach((iv, i) => ev.push({ date: iv.date, text: `Interview #${i + 1}`, sub: iv.with ? "with " + iv.with : "", kind: "reply", type: "iv" }));
       if (a.offer_date) ev.push({ date: a.offer_date, text: "Offer received", kind: "reply", type: "status" });
+      if (a.offer_signed_date) ev.push({ date: a.offer_signed_date, text: "Offer signed", kind: "reply", type: "status" });
       if (a.offer_rejected_date) ev.push({ date: a.offer_rejected_date, text: "Offer rejected", kind: "linkedin", type: "status" });
       if (a.rejection_date) ev.push({ date: a.rejection_date, text: "Rejected", kind: "linkedin", type: "status" });
       return ev;
@@ -1321,7 +1322,7 @@
       return `<form class="stage-edit" id="stage-form">
         <div class="status-btns" role="group" aria-label="Stage">${[["to_start", "To Start"], ["in_progress", "In progress"], ["completed", "Applied"]]
           .map(([v, l]) => `<button type="button" class="btn${cur === v ? " primary" : ""}" data-stage="${v}" aria-pressed="${cur === v}">${l}</button>`).join("")}</div>
-        ${[["date_applied", "Date applied"], ["offer_date", "Offer received"], ["offer_rejected_date", "Offer rejected"], ["rejection_date", "Rejected"]]
+        ${[["date_applied", "Date applied"], ["offer_date", "Offer received"], ["offer_signed_date", "Offer signed"], ["offer_rejected_date", "Offer rejected"], ["rejection_date", "Rejected"]]
           .map(([k, l]) => `<div class="field"><label>${l}</label><input type="date" name="${k}" value="${esc(a[k] || "")}"></div>`).join("")}
         <span class="muted small">Interviews go in the Interviews box below. The stage follows the dates.</span>
       </form>`;
@@ -1393,7 +1394,7 @@
       renderPage();
     };
     const setStage = async (patch) => {
-      const later = ["rejection_date", "offer_date", "offer_rejected_date"];
+      const later = ["rejection_date", "offer_date", "offer_signed_date", "offer_rejected_date"];
       const goingBack = (patch.status && patch.status !== "completed") || ("date_applied" in patch && !patch.date_applied);
       if (goingBack) {
         if ((a.date_applied || later.some((k) => a[k])) && !(await confirmBox("Moving this back clears the date applied, offer and rejection dates.", "Clear dates"))) { paintOverview(); return; }
